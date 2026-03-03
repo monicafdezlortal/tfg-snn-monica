@@ -1,0 +1,2 @@
+model,dataset,encoding,timesteps_T,accuracy_test,notes 
+baseline_snn,MNIST,rate,6,0.92,"1a prueba spiking jelly LIF" 
