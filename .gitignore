@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+
+# Datasets (demasiado grandes para el repo)
+SEED/
+data/
