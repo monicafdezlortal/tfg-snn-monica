@@ -36,3 +36,32 @@ Trial 31/40   4ch h=512 L=1 drop=0.08 lr=6.6e-04 wd=2.7e-06 bs=512  val=0.6884±
 Trial 32/40  62ch h=256 L=1 drop=0.40 lr=1.2e-03 wd=1.2e-03 bs=128  val=0.7275±0.0172  ep=6|6|2|9  188s
 Trial 33/40   4ch h= 32 L=2 drop=0.14 lr=1.1e-04 wd=1.7e-04 bs=512  val=0.7092±0.0339  ep=5|4|3|4  34s
 Trial 34/40  62ch h= 64 L=1 drop=0.48 lr=2.9e-04 wd=6.5e-03 bs=512  val=0.7439±0.0139  ep=1|1|2|1  24s
+Trial 35/40  62ch h= 64 L=2 drop=0.15 lr=2.4e-03 wd=4.6e-06 bs=256  val=0.7268±0.0111  ep=10|10|4|3  104s
+Trial 36/40  62ch h= 32 L=1 drop=0.59 lr=2.1e-03 wd=9.9e-04 bs=256  val=0.7190±0.0221  ep=2|1|2|2  45s
+Trial 37/40  62ch h=512 L=1 drop=0.31 lr=2.9e-04 wd=1.2e-03 bs=512  val=0.7313±0.0164  ep=1|1|5|1  98s
+Trial 38/40   4ch h=256 L=2 drop=0.06 lr=1.3e-03 wd=1.1e-05 bs=256  val=0.6635±0.0219  ep=1|2|4|1  71s
+Trial 39/40   4ch h=512 L=3 drop=0.07 lr=1.7e-03 wd=4.1e-06 bs=128  val=0.6399±0.0105  ep=1|4|1|4  199s
+Trial 40/40  62ch h= 32 L=2 drop=0.53 lr=2.0e-04 wd=1.7e-05 bs=256  val=0.7435±0.0178  ep=1|1|2|1  28s
+
+======================================================================
+TOP 5 por val_acc media (CV 4 folds por sujeto)
+======================================================================
+1. trial 27  val=0.7454  62ch h=32 L=1 drop=0.349 lr=3.3e-04 wd=2.3e-04 bs=512
+2. trial 14  val=0.7450  62ch h=128 L=1 drop=0.182 lr=1.1e-04 wd=5.6e-05 bs=256
+3. trial 34  val=0.7439  62ch h=64 L=1 drop=0.485 lr=2.9e-04 wd=6.5e-03 bs=512
+4. trial 40  val=0.7435  62ch h=32 L=2 drop=0.525 lr=2.0e-04 wd=1.7e-05 bs=256
+5. trial  2  val=0.7424  62ch h=512 L=3 drop=0.472 lr=1.5e-04 wd=6.3e-05 bs=512
+
+MEJOR: trial 27
+  hiperparametros : {'channels': '62ch', 'hidden': 32, 'n_layers': 1, 'dropout': 0.349, 'lr': 0.0003253634473215581, 'weight_decay': 0.00023102658895922138, 'batch_size': 512}
+  val_acc CV      : 0.7454 ± 0.0229
+  epochs finales  : 1 (media de las optimas por fold)
+  TEST acc        : 0.6984 ± 0.0132  (semillas [0, 1, 2]: 0.6905, 0.7170, 0.6877)
+
+BASELINE (train_ann.py): trial 0
+  hiperparametros : {'channels': '4ch', 'hidden': 128, 'n_layers': 2, 'dropout': 0.3, 'lr': 0.001, 'weight_decay': 0.0001, 'batch_size': 256}
+  val_acc CV      : 0.6826 ± 0.0216
+  epochs finales  : 3 (media de las optimas por fold)
+  TEST acc        : 0.6424 ± 0.0127  (semillas [0, 1, 2]: 0.6577, 0.6431, 0.6265)
+
+Resumen guardado en results/ann_best.txt

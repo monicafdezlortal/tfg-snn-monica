@@ -1,0 +1,11 @@
+MEJOR: trial 27
+  hiperparametros : {'channels': '62ch', 'hidden': 32, 'n_layers': 1, 'dropout': 0.349, 'lr': 0.0003253634473215581, 'weight_decay': 0.00023102658895922138, 'batch_size': 512}
+  val_acc CV      : 0.7454 ± 0.0229
+  epochs finales  : 1 (media de las optimas por fold)
+  TEST acc        : 0.6984 ± 0.0132  (semillas [0, 1, 2]: 0.6905, 0.7170, 0.6877)
+
+BASELINE (train_ann.py): trial 0
+  hiperparametros : {'channels': '4ch', 'hidden': 128, 'n_layers': 2, 'dropout': 0.3, 'lr': 0.001, 'weight_decay': 0.0001, 'batch_size': 256}
+  val_acc CV      : 0.6826 ± 0.0216
+  epochs finales  : 3 (media de las optimas por fold)
+  TEST acc        : 0.6424 ± 0.0127  (semillas [0, 1, 2]: 0.6577, 0.6431, 0.6265)
