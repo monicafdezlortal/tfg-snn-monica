@@ -1,0 +1,3 @@
+model,dataset,encoding,timesteps_T,accuracy_test,notes 
+baseline_snn,MNIST,rate,6,0.92,"1a prueba spiking jelly LIF" 
+ann_mlp,SEED de_LDS 4ch (20 feat),none,-,0.6279,"MLP 20-128-64-3 ReLU; test sujetos 1-3, val sujetos 4-5"

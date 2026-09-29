@@ -1,0 +1,12 @@
+MEJOR: features=de+dasm+rasm  contexto=0  reg=noise0.5  input_dim=580
+  red             : {'hidden': 256, 'n_layers': 2, 'dropout': 0.5, 'lr': 0.0003, 'weight_decay': 0.0001, 'batch_size': 256}
+  val_acc CV      : 0.7395
+  epochs finales  : 4
+  TEST acc        : 0.6748 ± 0.0029  (0.6714, 0.6785, 0.6744)
+  TEST ensemble 5 semillas: 0.6927
+
+REFERENCIA de_LDS 62ch: features=de  contexto=0  reg=none  input_dim=310
+  red             : {'hidden': 256, 'n_layers': 2, 'dropout': 0.5, 'lr': 0.0003, 'weight_decay': 0.0001, 'batch_size': 256}
+  val_acc CV      : 0.7322
+  epochs finales  : 2
+  TEST acc        : 0.6879 ± 0.0099  (0.6755, 0.6997, 0.6884)
