@@ -1,15 +1,9 @@
 """
 Entrena una ANN (MLP) sobre las Extracted Features de SEED (de_LDS).
-Sirve como baseline no-spiking para comparar con train_snn.py, asi que
-replica su protocolo:
   - Mismas features: 4 canales (FT7, FT8, T7, T8) x 5 bandas = 20
     (o los 62 canales = 310 con USE_ALL_CHANNELS=True)
   - Normalizacion z-score por sujeto (sin leakage entre sujetos)
-  - Split cross-subject held-out: sujetos 1-3 -> test, 4-5 -> val, 6-15 -> train
-  - Misma arquitectura oculta (hidden -> hidden//2) pero con ReLU en vez de LIF
-    y sin dimension temporal T: la entrada son las features continuas.
-
-Lee directamente los .mat, no necesita data/seed_snn_dataset.npz.
+  - sujetos 1-3 -> test, 4-5 -> val, 6-15 -> train
 """
 
 import os
