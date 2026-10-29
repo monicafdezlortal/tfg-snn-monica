@@ -1,7 +1,19 @@
 __pycache__/
 *.pyc
+*.egg-info/
+.ipynb_checkpoints/
+
+# Entornos virtuales
+.venv/
+venv/
 
 # Datasets (demasiado grandes para el repo)
 SEED/
 data/
 ExtractedFeatures_1s/
+
+# Pesos de modelos (se regeneran con los scripts)
+*.pth
+
+# Configuracion local de herramientas
+.claude/
