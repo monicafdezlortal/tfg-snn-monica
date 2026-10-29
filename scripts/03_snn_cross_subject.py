@@ -1,185 +1,88 @@
 """
-Entrena una SNN con SpikingJelly sobre el dataset SEED preprocesado.
+Experimento 03 - SNN (SpikingJelly, neuronas LIF) cross-subject sobre SEED de_LDS.
 Split cross-subject held-out: sujetos 1-3 -> test, 4-5 -> val, 6-15 -> train.
 La validacion usa sujetos enteros: con random_split las ventanas contiguas
 (casi identicas tras el suavizado LDS) caian en train y val a la vez y
-val_acc salia ~100%, sin informar de la generalizacion a sujetos nuevos.
+val_acc salia ~100%, sin informar de la generalizacion a sujetos nuevos
+(ver legacy/train_snn_random_split.py).
+
+Entrada: z-score por sujeto mapeado a [0,1] (clip +-4 sigma) y codificado en
+spikes por rate coding (Bernoulli) con T pasos, regenerado en cada epoch.
+
+Uso:
+  python scripts/03_snn_cross_subject.py --channels 4 --seed 42
+Salida:
+  results/03_snn_cross_subject/<4ch|62ch>_seed<N>/
+    config.json, metrics.json, confusion_matrix.csv, model.pth
 """
 
+import argparse
 import os
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
 from sklearn.metrics import classification_report, confusion_matrix
 
-from spikingjelly.activation_based import neuron, functional, surrogate, layer
+from eeg_emotion import config as cfg
+from eeg_emotion.data import (load_seed_features, zscore_per_subject, to_spike_rate,
+                              cross_subject_masks, describe_split,
+                              SpikeDataset, spike_collate)
+from eeg_emotion.models import EmotionSNN
+from eeg_emotion.training import (set_seed, class_weights, n_params, evaluate, fit,
+                                  compute_metrics, run_dir, save_run)
+
+EXPERIMENT = "03_snn_cross_subject"
 
 # ============================================================
-# CONFIG
+# HIPERPARAMETROS
 # ============================================================
-NPZ_PATH    = "data/seed_snn_dataset.npz"
-CKPT_PATH   = "data/best_snn.pth"
-
-T           = 50       # pasos temporales (debe coincidir con build_dataset.py)
+T           = 50       # pasos temporales del rate coding
 HIDDEN      = 128
 EPOCHS      = 50
 BATCH_SIZE  = 256
 LR          = 1e-3
 WEIGHT_DECAY= 1e-4
 DROPOUT     = 0.3
-VAL_SUBJECTS  = [4, 5]      # sujetos reservados como validacion
-TEST_SUBJECTS = [1, 2, 3]   # sujetos reservados como test (cross-subject)
-SEED        = 42
-
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-
-torch.manual_seed(SEED)
-np.random.seed(SEED)
 
 
-# ============================================================
-# DATASET
-# ============================================================
-class SpikeDataset(Dataset):
-    """
-    Genera spikes por rate coding en cada __getitem__ (no en disco).
-    Esto actua como data augmentation estocastica en cada epoch.
-    """
-    def __init__(self, X_norm: np.ndarray, y: np.ndarray, T: int):
-        self.X = torch.tensor(X_norm, dtype=torch.float32)  # (N, 20)
-        self.y = torch.tensor(y,      dtype=torch.long)
-        self.T = T
-
-    def __len__(self):
-        return len(self.y)
-
-    def __getitem__(self, idx):
-        x = self.X[idx]                                      # (20,)
-        # Bernoulli: spike si random < probabilidad = valor normalizado
-        rand   = torch.rand(self.T, x.shape[0])             # (T, 20)
-        spikes = (rand < x.unsqueeze(0)).float()             # (T, 20)
-        return spikes, self.y[idx]
+def parse_args():
+    p = argparse.ArgumentParser(description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--channels", type=int, choices=[4, 62], default=4)
+    p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--epochs", type=int, default=EPOCHS,
+                   help="solo para pruebas rapidas (por defecto %(default)s)")
+    p.add_argument("--out", default=None, help="carpeta de salida (por defecto en results/)")
+    return p.parse_args()
 
 
-# ============================================================
-# MODELO
-# ============================================================
-class EmotionSNN(nn.Module):
-    """
-    SNN de 2 capas ocultas con neuronas LIF.
-    Fixes aplicados:
-    - BatchNorm antes de cada LIF para que la entrada este en rango util
-    - v_threshold=0.5 para que las neuronas disparen (con umbral=1.0 y
-      pesos Kaiming la membrana raramente llega al umbral -> neuronas muertas)
-    - Sin LIF en la capa de salida: CrossEntropyLoss espera logits reales,
-      no spikes binarios
-    Entrada : (T, B, 20) spike trains
-    Salida  : (B, 3)     logits
-    """
-    def __init__(self, input_dim=20, hidden=128, num_classes=3):
-        super().__init__()
-
-        self.fc1   = layer.Linear(input_dim, hidden)
-        self.bn1   = nn.BatchNorm1d(hidden)
-        self.lif1  = neuron.LIFNode(tau=2.0, v_threshold=0.5,
-                                    surrogate_function=surrogate.ATan())
-        self.drop1 = nn.Dropout(DROPOUT)
-
-        self.fc2   = layer.Linear(hidden, hidden // 2)
-        self.bn2   = nn.BatchNorm1d(hidden // 2)
-        self.lif2  = neuron.LIFNode(tau=2.0, v_threshold=0.5,
-                                    surrogate_function=surrogate.ATan())
-        self.drop2 = nn.Dropout(DROPOUT)
-
-        self.fc3   = layer.Linear(hidden // 2, num_classes)
-        # Sin LIF aqui: la salida son logits directos para CrossEntropyLoss
-
-    def forward(self, x_seq):
-        # x_seq : (T, B, 20)
-        spike_acc = None
-        for t in range(x_seq.shape[0]):
-            h = self.drop1(self.lif1(self.bn1(self.fc1(x_seq[t]))))
-            h = self.drop2(self.lif2(self.bn2(self.fc2(h))))
-            h = self.fc3(h)
-            spike_acc = h if spike_acc is None else spike_acc + h
-        return spike_acc / x_seq.shape[0]               # (B, num_classes)
-
-
-# ============================================================
-# HELPERS
-# ============================================================
-def collate_fn(batch):
-    """Convierte lista de (T,20) y labels en tensores (T,B,20) y (B,)."""
-    spikes, labels = zip(*batch)
-    spikes = torch.stack(spikes, dim=1)   # (T, B, 20)
-    labels = torch.stack(labels, dim=0)   # (B,)
-    return spikes, labels
-
-
-@torch.no_grad()
-def evaluate(model, loader):
-    model.eval()
-    all_preds, all_true, losses = [], [], []
-    loss_fn = nn.CrossEntropyLoss()
-    for x, y in loader:
-        x, y = x.to(DEVICE), y.to(DEVICE)
-        logits = model(x)
-        losses.append(loss_fn(logits, y).item())
-        all_preds.append(logits.argmax(1).cpu())
-        all_true.append(y.cpu())
-        functional.reset_net(model)
-    preds = torch.cat(all_preds).numpy()
-    true  = torch.cat(all_true).numpy()
-    acc   = (preds == true).mean()
-    return float(np.mean(losses)), float(acc), preds, true
-
-
-# ============================================================
-# MAIN
-# ============================================================
 def main():
-    print(f"Dispositivo: {DEVICE}\n")
+    args = parse_args()
+    set_seed(args.seed)
+    device  = cfg.DEVICE
+    out_dir = args.out or run_dir(EXPERIMENT, args.channels, args.seed)
+    ckpt    = os.path.join(out_dir, "model.pth")
+    print(f"Dispositivo: {device}\n")
 
-    # --- Cargar datos ---
-    data    = np.load(NPZ_PATH)
-    # Reconstruir valores DE brutos (los guardados estan normalizados globalmente)
-    X_norm_global = data["X_features"].astype(np.float64)
-    g_min = data["norm_min"].astype(np.float64)
-    g_max = data["norm_max"].astype(np.float64)
-    X_raw = X_norm_global * (g_max - g_min) + g_min   # DE originales
-
-    y       = data["y"]        # (N,)
-    subject = data["subject"]  # (N,)
+    # --- Cargar datos (sujetos en orden 1..15, como el antiguo .npz) ---
+    X_raw, meta = load_seed_features(args.channels, order="subject")
+    y, subject = meta["y"], meta["subject"]
 
     # --- Normalizacion por sujeto ---
     # Cada sujeto se normaliza con su propia media y std por feature.
     # Los sujetos de test usan sus propias estadisticas -> sin leakage.
     # Tras z-score se mapea a [0,1] clipando en ±4σ para el rate coding.
-    X_subj = np.zeros_like(X_raw, dtype=np.float32)
-    for s in np.unique(subject):
-        mask  = subject == s
-        x_s   = X_raw[mask]
-        mu    = x_s.mean(axis=0, keepdims=True)
-        sigma = x_s.std(axis=0, keepdims=True)
-        sigma = np.where(sigma < 1e-8, 1.0, sigma)
-        z     = (x_s - mu) / sigma                    # z-score del sujeto
-        X_subj[mask] = ((np.clip(z, -4, 4) + 4) / 8).astype(np.float32)
-
+    X_subj = to_spike_rate(zscore_per_subject(X_raw, subject))
+    input_dim = X_subj.shape[1]
     print(f"Normalizacion por sujeto: rango global [{X_subj.min():.3f}, {X_subj.max():.3f}]")
 
     # --- Split cross-subject held-out ---
-    test_mask  = np.isin(subject, TEST_SUBJECTS)
-    val_mask   = np.isin(subject, VAL_SUBJECTS)
-    train_mask = ~(test_mask | val_mask)
-
+    train_mask, val_mask, test_mask = cross_subject_masks(subject)
     X_train, y_train = X_subj[train_mask], y[train_mask]
     X_val,   y_val   = X_subj[val_mask],   y[val_mask]
     X_test,  y_test  = X_subj[test_mask],  y[test_mask]
-
-    print(f"Train sujetos : {sorted(np.unique(subject[train_mask]).tolist())}")
-    print(f"Val   sujetos : {sorted(np.unique(subject[val_mask]).tolist())}")
-    print(f"Test  sujetos : {sorted(np.unique(subject[test_mask]).tolist())}")
+    describe_split(subject, (train_mask, val_mask, test_mask))
 
     # --- Dataset y DataLoaders ---
     train_ds = SpikeDataset(X_train, y_train, T)
@@ -188,80 +91,58 @@ def main():
     n_train, n_val = len(train_ds), len(val_ds)
 
     train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True,
-                              collate_fn=collate_fn, num_workers=0)
+                              collate_fn=spike_collate, num_workers=0)
     val_loader   = DataLoader(val_ds,   batch_size=BATCH_SIZE, shuffle=False,
-                              collate_fn=collate_fn, num_workers=0)
+                              collate_fn=spike_collate, num_workers=0)
     test_loader  = DataLoader(test_ds,  batch_size=BATCH_SIZE, shuffle=False,
-                              collate_fn=collate_fn, num_workers=0)
+                              collate_fn=spike_collate, num_workers=0)
 
     print(f"  train={n_train}  val={n_val}  test={len(test_ds)}\n")
 
     # --- Class weights (penaliza mas los errores en clases minoritarias en train) ---
-    counts  = np.bincount(y_train, minlength=3).astype(np.float32)
-    weights = (counts.sum() / (3.0 * counts))          # inverso de frecuencia
-    weights = weights / weights.mean()                  # escala relativa a 1.0
-    w_tensor = torch.tensor(weights, dtype=torch.float32).to(DEVICE)
+    w_tensor = class_weights(y_train, device)
+    weights = w_tensor.cpu().numpy()
     print(f"\nClass weights -> negativa={weights[0]:.3f}  "
           f"neutra={weights[1]:.3f}  positiva={weights[2]:.3f}")
 
     # --- Modelo ---
-    model   = EmotionSNN(input_dim=20, hidden=HIDDEN, num_classes=3).to(DEVICE)
+    model   = EmotionSNN(input_dim=input_dim, hidden=HIDDEN, num_classes=3,
+                         dropout=DROPOUT).to(device)
     optim   = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
     # Reduce LR x0.5 si val_acc no mejora en 7 epochs; minimo 1e-5
     sched   = torch.optim.lr_scheduler.ReduceLROnPlateau(
                   optim, mode='max', factor=0.5, patience=7, min_lr=1e-5)
     loss_fn = nn.CrossEntropyLoss(weight=w_tensor)
+    print(f"Parametros entrenables: {n_params(model):,}\n")
 
-    n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Parametros entrenables: {n_params:,}\n")
-
-    best_val_acc = 0.0
-    best_epoch   = 0
-
-    print(f"{'Ep':>4} {'train_loss':>10} {'val_loss':>9} {'val_acc':>8} {'lr':>8} {'best':>5}")
-    print("-" * 55)
-
-    for epoch in range(1, EPOCHS + 1):
-        model.train()
-        train_losses = []
-
-        for x, y_batch in train_loader:
-            x, y_batch = x.to(DEVICE), y_batch.to(DEVICE)
-            optim.zero_grad()
-            logits = model(x)
-            loss   = loss_fn(logits, y_batch)
-            loss.backward()
-            optim.step()
-            train_losses.append(loss.item())
-            functional.reset_net(model)
-
-        val_loss, val_acc, _, _ = evaluate(model, val_loader)
-        sched.step(val_acc)   # ReduceLROnPlateau necesita la metrica
-        current_lr = optim.param_groups[0]['lr']
-
-        marker = ""
-        if val_acc > best_val_acc:
-            best_val_acc = val_acc
-            best_epoch   = epoch
-            torch.save(model.state_dict(), CKPT_PATH)
-            marker = " <--"
-
-        print(f"{epoch:4d} {np.mean(train_losses):10.4f} {val_loss:9.4f} "
-              f"{val_acc:8.4f} {current_lr:8.2e}{marker}")
+    best_val_acc, best_epoch, history = fit(model, train_loader, val_loader, optim, sched,
+                                            loss_fn, args.epochs, ckpt, device,
+                                            spiking=True)
 
     # --- Evaluacion final en test ---
-    print(f"\nMejor val_acc: {best_val_acc:.4f} (epoch {best_epoch})")
-    model.load_state_dict(torch.load(CKPT_PATH, map_location=DEVICE))
-
-    test_loss, test_acc, preds, true = evaluate(model, test_loader)
+    test_loss, test_acc, preds, true = evaluate(model, test_loader, device, spiking=True)
     print(f"\nTEST  loss={test_loss:.4f}  acc={test_acc:.4f}")
     print()
-    print(classification_report(true, preds,
-                                target_names=["negativa", "neutra", "positiva"],
-                                digits=4))
+    print(classification_report(true, preds, target_names=cfg.CLASS_NAMES, digits=4))
     print("Confusion matrix:")
     print(confusion_matrix(true, preds))
-    print(f"\nModelo guardado en: {CKPT_PATH}")
+    print(f"\nModelo guardado en: {ckpt}")
+
+    config = {
+        "experiment": EXPERIMENT, "model": "EmotionSNN", "channels": args.channels,
+        "seed": args.seed, "feature_key": cfg.FEATURE_KEY, "input_dim": input_dim,
+        "normalization": "z-score por sujeto -> [0,1] (clip ±4σ)",
+        "encoding": "rate coding Bernoulli", "T": T,
+        "neuron": "LIF tau=2.0 v_threshold=0.5 surrogate=ATan",
+        "train_subjects": sorted(np.unique(subject[train_mask]).tolist()),
+        "val_subjects": cfg.VAL_SUBJECTS, "test_subjects": cfg.TEST_SUBJECTS,
+        "hidden": HIDDEN, "epochs": args.epochs, "batch_size": BATCH_SIZE, "lr": LR,
+        "weight_decay": WEIGHT_DECAY, "dropout": DROPOUT, "n_params": n_params(model),
+        "device": device, "torch_threads": torch.get_num_threads(),
+    }
+    metrics = {"seed": args.seed, **compute_metrics(true, preds), "test_loss": test_loss,
+               "best_val_acc": best_val_acc, "best_epoch": best_epoch, "history": history}
+    save_run(out_dir, config, metrics)
 
 
 if __name__ == "__main__":

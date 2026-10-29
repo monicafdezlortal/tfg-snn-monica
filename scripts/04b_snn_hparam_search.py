@@ -1,13 +1,20 @@
 """
-Random search de hiperparametros sobre la SNN SEED.
+Experimento 04b - Random search de hiperparametros sobre la SNN SEED.
 - 15 combinaciones aleatorias
 - Max 20 epochs por combinacion, early stopping patience=5 sobre val_loss
-- Resultados en data/hparam_results.csv
-- Reutiliza la normalizacion por sujeto y el split de train_snn.py
+- Mismos datos, normalizacion por sujeto y split que 03_snn_cross_subject.py
 - La mejor configuracion se elige por val_acc (sujetos de validacion);
   test_acc solo se reporta, no se usa para elegir
+
+Uso:
+  python scripts/04b_snn_hparam_search.py --channels 4
+Salida (se puede reanudar):
+  results/04b_snn_hparam_search/<4ch|62ch>_seed<N>/
+    hparam_results.csv  una fila por configuracion
+    config.json, metrics.json, confusion_matrix.csv (de la mejor)
 """
 
+import argparse
 import os
 import csv
 import time
@@ -16,115 +23,64 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from spikingjelly.activation_based import neuron, functional, surrogate, layer
+from spikingjelly.activation_based import functional
 
-# Reutilizamos constantes y helpers de train_snn
-from train_snn import (
-    SpikeDataset, collate_fn, evaluate,
-    NPZ_PATH, TEST_SUBJECTS, VAL_SUBJECTS, T, SEED, BATCH_SIZE, DEVICE,
-)
+from eeg_emotion import config as cfg
+from eeg_emotion.data import (load_seed_features, zscore_per_subject, to_spike_rate,
+                              cross_subject_masks, SpikeDataset, spike_collate)
+from eeg_emotion.models import FlexSNN
+from eeg_emotion.training import (class_weights, evaluate, compute_metrics,
+                                  run_dir, save_run)
 
-CSV_PATH   = "data/hparam_results.csv"
+EXPERIMENT = "04b_snn_hparam_search"
 N_TRIALS   = 15
 MAX_EPOCHS = 20
 PATIENCE   = 5     # early stopping sobre val_loss
-RNG        = np.random.default_rng(SEED)
+T          = 50    # mismos que 03_snn_cross_subject.py
+BATCH_SIZE = 256
+DEVICE     = cfg.DEVICE
+
+FIELDNAMES = ["trial", "hidden", "n_layers", "v_threshold", "tau",
+              "dropout", "lr", "n_params", "epochs_run", "val_acc", "test_acc"]
 
 
 # ============================================================
-# MODELO FLEXIBLE (1 o 2 capas ocultas)
+# CARGA DE DATOS (igual que 03_snn_cross_subject.py, una sola vez)
 # ============================================================
-class FlexSNN(nn.Module):
-    def __init__(self, input_dim, hidden, n_layers, v_threshold, tau, dropout):
-        super().__init__()
-        self.fcs   = nn.ModuleList()
-        self.bns   = nn.ModuleList()
-        self.lifs  = nn.ModuleList()
-        self.drops = nn.ModuleList()
+def load_data(channels):
+    X_raw, meta = load_seed_features(channels, order="subject")
+    y, subject = meta["y"], meta["subject"]
+    X_subj = to_spike_rate(zscore_per_subject(X_raw, subject))
 
-        in_dim = input_dim
-        for _ in range(n_layers):
-            self.fcs.append(layer.Linear(in_dim, hidden))
-            self.bns.append(nn.BatchNorm1d(hidden))
-            self.lifs.append(neuron.LIFNode(
-                tau=float(tau),
-                v_threshold=float(v_threshold),
-                surrogate_function=surrogate.ATan()
-            ))
-            self.drops.append(nn.Dropout(float(dropout)))
-            in_dim = hidden
-
-        self.out = layer.Linear(in_dim, 3)
-
-    def forward(self, x_seq):
-        acc = None
-        for t in range(x_seq.shape[0]):
-            h = x_seq[t]
-            for fc, bn, lif, drop in zip(self.fcs, self.bns, self.lifs, self.drops):
-                h = drop(lif(bn(fc(h))))
-            h = self.out(h)
-            acc = h if acc is None else acc + h
-        return acc / x_seq.shape[0]
-
-
-# ============================================================
-# CARGA DE DATOS (igual que train_snn, una sola vez)
-# ============================================================
-def load_data():
-    data          = np.load(NPZ_PATH)
-    X_norm_global = data["X_features"].astype(np.float64)
-    g_min         = data["norm_min"].astype(np.float64)
-    g_max         = data["norm_max"].astype(np.float64)
-    X_raw         = X_norm_global * (g_max - g_min) + g_min
-
-    y       = data["y"]
-    subject = data["subject"]
-
-    X_subj = np.zeros_like(X_raw, dtype=np.float32)
-    for s in np.unique(subject):
-        mask  = subject == s
-        x_s   = X_raw[mask]
-        mu    = x_s.mean(axis=0, keepdims=True)
-        sigma = x_s.std(axis=0, keepdims=True)
-        sigma = np.where(sigma < 1e-8, 1.0, sigma)
-        z     = (x_s - mu) / sigma
-        X_subj[mask] = ((np.clip(z, -4, 4) + 4) / 8).astype(np.float32)
-
-    test_mask  = np.isin(subject, TEST_SUBJECTS)
-    val_mask   = np.isin(subject, VAL_SUBJECTS)
-    train_mask = ~(test_mask | val_mask)
-
+    train_mask, val_mask, test_mask = cross_subject_masks(subject)
     X_train, y_train = X_subj[train_mask], y[train_mask]
     X_val,   y_val   = X_subj[val_mask],   y[val_mask]
     X_test,  y_test  = X_subj[test_mask],  y[test_mask]
 
-    counts  = np.bincount(y_train, minlength=3).astype(np.float32)
-    weights = (counts.sum() / (3.0 * counts))
-    weights = weights / weights.mean()
-    w_tensor = torch.tensor(weights, dtype=torch.float32).to(DEVICE)
-
+    w_tensor = class_weights(y_train, DEVICE)
     return X_train, y_train, X_val, y_val, X_test, y_test, w_tensor
 
 
 # ============================================================
 # ENTRENAMIENTO DE UN TRIAL
 # ============================================================
-def run_trial(hp, X_train, y_train, X_val, y_val, X_test, y_test, w_tensor):
-    torch.manual_seed(SEED)
+def run_trial(hp, X_train, y_train, X_val, y_val, X_test, y_test, w_tensor,
+              seed, max_epochs=MAX_EPOCHS):
+    torch.manual_seed(seed)
 
     train_ds = SpikeDataset(X_train, y_train, T)
     val_ds   = SpikeDataset(X_val,   y_val,   T)
     test_ds  = SpikeDataset(X_test,  y_test,  T)
 
     train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True,
-                              collate_fn=collate_fn, num_workers=0)
+                              collate_fn=spike_collate, num_workers=0)
     val_loader   = DataLoader(val_ds,   batch_size=BATCH_SIZE, shuffle=False,
-                              collate_fn=collate_fn, num_workers=0)
+                              collate_fn=spike_collate, num_workers=0)
     test_loader  = DataLoader(test_ds,  batch_size=BATCH_SIZE, shuffle=False,
-                              collate_fn=collate_fn, num_workers=0)
+                              collate_fn=spike_collate, num_workers=0)
 
     model   = FlexSNN(
-        input_dim=20,
+        input_dim=X_train.shape[1],
         hidden=hp["hidden"],
         n_layers=hp["n_layers"],
         v_threshold=hp["v_threshold"],
@@ -140,7 +96,7 @@ def run_trial(hp, X_train, y_train, X_val, y_val, X_test, y_test, w_tensor):
     epochs_no_impr = 0
     epochs_done    = 0
 
-    for epoch in range(1, MAX_EPOCHS + 1):
+    for epoch in range(1, max_epochs + 1):
         model.train()
         for x, y_batch in train_loader:
             x, y_batch = x.to(DEVICE), y_batch.to(DEVICE)
@@ -150,7 +106,7 @@ def run_trial(hp, X_train, y_train, X_val, y_val, X_test, y_test, w_tensor):
             optim.step()
             functional.reset_net(model)
 
-        val_loss, val_acc, _, _ = evaluate(model, val_loader)
+        val_loss, val_acc, _, _ = evaluate(model, val_loader, DEVICE, spiking=True)
         epochs_done = epoch
 
         if val_loss < best_val_loss - 1e-4:
@@ -165,51 +121,68 @@ def run_trial(hp, X_train, y_train, X_val, y_val, X_test, y_test, w_tensor):
     if best_state is not None:
         model.load_state_dict(best_state)
 
-    _, val_acc,  _,    _    = evaluate(model, val_loader)
-    _, test_acc, preds, true = evaluate(model, test_loader)
+    _, val_acc,  _,    _    = evaluate(model, val_loader, DEVICE, spiking=True)
+    _, test_acc, preds, true = evaluate(model, test_loader, DEVICE, spiking=True)
 
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
-    return {
+    row = {
         **hp,
         "n_params":   n_params,
         "epochs_run": epochs_done,
         "val_acc":    round(val_acc,  4),
         "test_acc":   round(test_acc, 4),
     }
+    return row, compute_metrics(true, preds)
 
 
 # ============================================================
 # ESPACIO DE BUSQUEDA Y MUESTREO
 # ============================================================
-def sample_hp():
+def sample_hp(rng):
     return {
-        "hidden":      int(RNG.integers(64, 257)),          # 64..256
-        "n_layers":    int(RNG.integers(1, 3)),             # 1 o 2
-        "v_threshold": round(float(RNG.uniform(0.5, 1.5)), 3),
-        "tau":         round(float(RNG.uniform(1.1, 4.0)), 3),  # LIFNode exige tau > 1
-        "dropout":     round(float(RNG.uniform(0.1, 0.4)), 3),
-        "lr":          float(np.exp(RNG.uniform(np.log(5e-4), np.log(5e-3)))),
+        "hidden":      int(rng.integers(64, 257)),          # 64..256
+        "n_layers":    int(rng.integers(1, 3)),             # 1 o 2
+        "v_threshold": round(float(rng.uniform(0.5, 1.5)), 3),
+        "tau":         round(float(rng.uniform(1.1, 4.0)), 3),  # LIFNode exige tau > 1
+        "dropout":     round(float(rng.uniform(0.1, 0.4)), 3),
+        "lr":          float(np.exp(rng.uniform(np.log(5e-4), np.log(5e-3)))),
     }
+
+
+def parse_args():
+    p = argparse.ArgumentParser(description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--channels", type=int, choices=[4, 62], default=4)
+    p.add_argument("--seed", type=int, default=42,
+                   help="semilla del sorteo de hiperparametros y del entrenamiento")
+    p.add_argument("--trials", type=int, default=N_TRIALS)
+    p.add_argument("--max-epochs", type=int, default=MAX_EPOCHS,
+                   help="solo para pruebas rapidas (por defecto %(default)s)")
+    p.add_argument("--out", default=None, help="carpeta de salida (por defecto en results/)")
+    return p.parse_args()
 
 
 # ============================================================
 # MAIN
 # ============================================================
 def main():
-    print("Cargando datos...")
-    X_tr, y_tr, X_va, y_va, X_te, y_te, w = load_data()
-    print(f"  Train: {len(y_tr)}  Val: {len(y_va)}  Test: {len(y_te)}\n")
+    args = parse_args()
+    rng = np.random.default_rng(args.seed)
+    out_dir = args.out or run_dir(EXPERIMENT, args.channels, args.seed)
+    os.makedirs(out_dir, exist_ok=True)
+    csv_path = os.path.join(out_dir, "hparam_results.csv")
 
-    os.makedirs("data", exist_ok=True)
-    fieldnames = ["trial", "hidden", "n_layers", "v_threshold", "tau",
-                  "dropout", "lr", "n_params", "epochs_run", "val_acc", "test_acc"]
+    print("Cargando datos...")
+    X_tr, y_tr, X_va, y_va, X_te, y_te, w = load_data(args.channels)
+    print(f"  Train: {len(y_tr)}  Val: {len(y_va)}  Test: {len(y_te)}\n")
 
     # --- Reanudacion: cargar trials ya completados del CSV ---
     results       = []
     completed_ids = set()
-    if os.path.exists(CSV_PATH):
-        with open(CSV_PATH, newline="") as f:
+    test_metrics  = {}          # metricas completas de los trials de esta ejecucion
+    if os.path.exists(csv_path):
+        with open(csv_path, newline="") as f:
             for row in csv.DictReader(f):
                 results.append({k: (int(v) if k in ("trial","hidden","n_layers","epochs_run","n_params")
                                     else float(v)) for k, v in row.items()})
@@ -218,39 +191,40 @@ def main():
               f"({sorted(completed_ids)})\n")
 
     write_mode = "a" if completed_ids else "w"
-    with open(CSV_PATH, write_mode, newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+    with open(csv_path, write_mode, newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
         if not completed_ids:
             writer.writeheader()
 
-        for trial in range(1, N_TRIALS + 1):
-            hp = sample_hp()   # el RNG es determinista: misma semilla -> mismos hp
+        for trial in range(1, args.trials + 1):
+            hp = sample_hp(rng)   # el RNG es determinista: misma semilla -> mismos hp
             if trial in completed_ids:
-                print(f"Trial {trial:2d}/{N_TRIALS}  [ya completado, saltando]")
+                print(f"Trial {trial:2d}/{args.trials}  [ya completado, saltando]")
                 continue
 
-            print(f"Trial {trial:2d}/{N_TRIALS}  "
+            print(f"Trial {trial:2d}/{args.trials}  "
                   f"hidden={hp['hidden']}  layers={hp['n_layers']}  "
                   f"thr={hp['v_threshold']}  tau={hp['tau']}  "
                   f"drop={hp['dropout']}  lr={hp['lr']:.2e}  ...",
                   end="", flush=True)
 
             t0  = time.time()
-            row = run_trial(hp, X_tr, y_tr, X_va, y_va, X_te, y_te, w)
+            row, test_metrics[trial] = run_trial(hp, X_tr, y_tr, X_va, y_va, X_te, y_te, w,
+                                                 seed=args.seed, max_epochs=args.max_epochs)
             row["trial"] = trial
             elapsed = time.time() - t0
 
             print(f"  val={row['val_acc']:.4f}  test={row['test_acc']:.4f}  "
                   f"ep={row['epochs_run']}  {elapsed:.0f}s")
 
-            writer.writerow({k: row[k] for k in fieldnames})
+            writer.writerow({k: row[k] for k in FIELDNAMES})
             f.flush()
             results.append(row)
 
     # --- Top 5 por val_acc (el test no se usa para elegir) ---
     results.sort(key=lambda r: r["val_acc"], reverse=True)
     print(f"\n{'='*70}")
-    print(f"TOP 5 por val_acc  (resultados completos en {CSV_PATH})")
+    print(f"TOP 5 por val_acc  (resultados completos en {csv_path})")
     print(f"{'='*70}")
     hdr = f"{'#':>3} {'test':>6} {'val':>6} {'hidden':>7} {'layers':>7} "
     hdr += f"{'thr':>5} {'tau':>5} {'drop':>5} {'lr':>8} {'ep':>4}"
@@ -267,6 +241,16 @@ def main():
     for k, v in best.items():
         if k != "trial":
             print(f"  {k:12s}: {v}")
+
+    config = {"experiment": EXPERIMENT, "channels": args.channels, "seed": args.seed,
+              "n_trials": args.trials, "max_epochs": args.max_epochs, "patience": PATIENCE,
+              "T": T, "batch_size": BATCH_SIZE, "val_subjects": cfg.VAL_SUBJECTS,
+              "test_subjects": cfg.TEST_SUBJECTS, "feature_key": cfg.FEATURE_KEY}
+    # Las metricas completas solo existen si el mejor trial se ha entrenado en
+    # esta ejecucion; si viene de un CSV reanudado, solo hay accuracy.
+    metrics = {"seed": args.seed, "best": best,
+               **test_metrics.get(best["trial"], {"accuracy": best["test_acc"]})}
+    save_run(out_dir, config, metrics)
 
 
 if __name__ == "__main__":

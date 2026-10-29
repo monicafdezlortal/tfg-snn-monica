@@ -1,45 +1,50 @@
 """
-Experimentos para mejorar la ANN cross-subject en SEED, por etapas (greedy):
+Experimento 04c - Experimentos para mejorar la ANN cross-subject en SEED, por etapas (greedy):
   1. Features de entrada   : de_LDS, psd_LDS, de+psd, de+asimetrias (dasm, rasm)...
   2. Contexto temporal     : concatenar las k ventanas ANTERIORES del mismo trial
                              (causal: solo pasado, valido en tiempo real)
   3. Regularizacion        : ruido gaussiano en la entrada, mixup, label smoothing
 Cada etapa parte de la mejor opcion de la anterior.
 
-Protocolo igual que ann_hparam_search.py:
+Protocolo igual que 04a_ann_hparam_search.py:
   - Sujetos 1-3 -> test, solo al final.
   - Sujetos 4-15 -> CV por sujetos en 4 folds de 3; se elige por val_acc media.
   - Final: la mejor combinacion y la referencia (de_LDS 62ch) se reentrenan
     con los 12 sujetos y se evaluan en test con 3 semillas, mas un ensemble
     de 5 semillas de la mejor.
 
-Resultados:
-  results/ann_experiments.csv       una fila por experimento (se puede reanudar)
-  results/ann_experiments_best.txt  resumen final con test
+Solo admite --channels 62: las asimetrias (dasm, rasm, asm, dcau) se calculan
+sobre pares de electrodos y no existen para la seleccion de 4 canales.
+
+Uso:
+  python scripts/04c_ann_feature_experiments.py
+Salida (se puede reanudar):
+  results/04c_ann_feature_experiments/62ch_seed<N>/
+    ann_experiments.csv       una fila por experimento
+    ann_experiments_best.txt  resumen final con test
+    config.json, metrics.json, confusion_matrix.csv (de la mejor, semilla 0)
 """
 
+import argparse
 import os
 import csv
-import glob
 import time
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
-from scipy.io import loadmat
 
-from ann_hparam_search import FlexANN, class_weights, FOLDS, TEST_SUBJECTS
-from train_ann import DATA_DIR, normalize_per_subject
+from eeg_emotion import config as cfg
+from eeg_emotion.data import load_seed, normalize_per_subject, add_context, cv_fold_masks
+from eeg_emotion.models import FlexANN
+from eeg_emotion.training import class_weights, compute_metrics, run_dir, save_run
 
-CSV_PATH     = "results/ann_experiments.csv"
-SUMMARY_PATH = "results/ann_experiments_best.txt"
+EXPERIMENT   = "04c_ann_feature_experiments"
 MAX_EPOCHS   = 40
 PATIENCE     = 6
 FINAL_SEEDS  = [0, 1, 2]
 ENSEMBLE_SEEDS = [10, 11, 12, 13, 14]
-SEED         = 42
-N_THREADS    = 4        # deja CPU libre para ann_hparam_search.py
-DEVICE       = "cuda" if torch.cuda.is_available() else "cpu"
+N_THREADS    = 4        # deja CPU libre para 04a_ann_hparam_search.py
+DEVICE       = cfg.DEVICE
 
 # Configuracion de red fija para comparar entradas (razonable segun la
 # prueba inicial: 62 canales + lr bajo + dropout alto funcionaba mejor)
@@ -75,42 +80,9 @@ def load_all_features(keys):
     """Devuelve {key: X (N, C*5) z-score por sujeto}, y, subject, trial_id.
     trial_id identifica cada trial de cada sesion; dentro de un trial las
     ventanas quedan en orden temporal."""
-    labels = loadmat(os.path.join(DATA_DIR, "label.mat"))["label"].flatten() + 1
-    files = sorted(f for f in glob.glob(os.path.join(DATA_DIR, "*.mat"))
-                   if "label" not in os.path.basename(f))
-    feats = {k: [] for k in keys}
-    ys, subjs, tids = [], [], []
-    tid = 0
-    for fp in files:
-        subj_id = int(os.path.basename(fp).split("_")[0])
-        mat = loadmat(fp)
-        for t in range(1, 16):
-            n = mat[f"de_LDS{t}"].shape[1]
-            for k in keys:
-                a = mat[f"{k}{t}"].transpose(1, 0, 2)          # (n, C, 5)
-                feats[k].append(a.reshape(n, -1))
-            ys.append(np.full(n, labels[t - 1], dtype=np.int64))
-            subjs.append(np.full(n, subj_id, dtype=np.int64))
-            tids.append(np.full(n, tid, dtype=np.int64))
-            tid += 1
-    y, subject, trial_id = map(np.concatenate, (ys, subjs, tids))
-    out = {}
-    for k in keys:
-        X = np.concatenate(feats[k]).astype(np.float64)
-        out[k] = normalize_per_subject(X, subject)
-    return out, y, subject, trial_id
-
-
-def add_context(X, trial_id, k):
-    """Concatena [x_{t-k}, ..., x_{t-1}, x_t] dentro de cada trial.
-    Al inicio del trial se repite la primera ventana (padding causal)."""
-    if k == 0:
-        return X
-    starts = np.r_[0, np.flatnonzero(np.diff(trial_id)) + 1]
-    pos = np.arange(len(X)) - np.repeat(starts, np.diff(np.r_[starts, len(X)]))
-    offs = np.arange(k, -1, -1)                                # k..0
-    idx = np.arange(len(X))[:, None] - np.minimum(offs[None, :], pos[:, None])
-    return X[idx].reshape(len(X), -1)
+    feats, meta = load_seed(keys, channels=62)
+    out = {k: normalize_per_subject(X, meta["subject"]) for k, X in feats.items()}
+    return out, meta["y"], meta["subject"], meta["trial_id"]
 
 
 # ============================================================
@@ -122,13 +94,14 @@ def predict_proba(model, X, bs=4096):
     return torch.cat([F.softmax(model(X[i:i + bs]), 1) for i in range(0, len(X), bs)])
 
 
-def train_model(X_tr, y_tr, X_val=None, y_val=None, reg=None, epochs=None, seed=SEED):
+def train_model(X_tr, y_tr, X_val=None, y_val=None, reg=None, epochs=None, seed=42,
+                max_epochs=MAX_EPOCHS):
     reg = reg or {}
-    epochs = epochs or MAX_EPOCHS
+    epochs = epochs or max_epochs
     torch.manual_seed(seed)
     model = FlexANN(X_tr.shape[1], NET["hidden"], NET["n_layers"], NET["dropout"]).to(DEVICE)
     optim = torch.optim.Adam(model.parameters(), lr=NET["lr"], weight_decay=NET["weight_decay"])
-    w = class_weights(y_tr.cpu().numpy())
+    w = class_weights(y_tr.cpu().numpy(), DEVICE)
     smooth = reg.get("smooth", 0.0)
     bs = NET["batch_size"]
 
@@ -171,19 +144,38 @@ def train_model(X_tr, y_tr, X_val=None, y_val=None, reg=None, epochs=None, seed=
     return model, best_acc, best_epoch
 
 
+def parse_args():
+    p = argparse.ArgumentParser(description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--channels", type=int, choices=[62], default=62,
+                   help="solo 62 (las asimetrias necesitan todos los electrodos)")
+    p.add_argument("--seed", type=int, default=42,
+                   help="semilla de los folds (las semillas finales son fijas)")
+    p.add_argument("--max-epochs", type=int, default=MAX_EPOCHS,
+                   help="solo para pruebas rapidas (por defecto %(default)s)")
+    p.add_argument("--out", default=None, help="carpeta de salida (por defecto en results/)")
+    return p.parse_args()
+
+
 # ============================================================
 # MAIN
 # ============================================================
 def main():
+    args = parse_args()
+    seed, max_epochs = args.seed, args.max_epochs
+    out_dir = args.out or run_dir(EXPERIMENT, args.channels, seed)
+    os.makedirs(out_dir, exist_ok=True)
+    csv_path = os.path.join(out_dir, "ann_experiments.csv")
+    summary_path = os.path.join(out_dir, "ann_experiments_best.txt")
+
     torch.set_num_threads(N_THREADS)
-    np.random.seed(SEED)
+    np.random.seed(seed)
     all_keys = sorted({k for ks in FEATURE_SETS.values() for k in ks})
     print(f"Cargando {all_keys} ...", flush=True)
     feats, y, subject, trial_id = load_all_features(all_keys)
     y_t = torch.from_numpy(y).to(DEVICE)
-    fold_masks = [np.isin(subject, f) for f in FOLDS]
-    pool_mask  = np.isin(subject, sum(FOLDS, []))
-    test_mask  = np.isin(subject, TEST_SUBJECTS)
+    fold_masks, pool_mask = cv_fold_masks(subject)
+    test_mask  = np.isin(subject, cfg.TEST_SUBJECTS)
     print(f"{len(y)} muestras\n", flush=True)
 
     def build_X(fset, ctx):
@@ -193,14 +185,13 @@ def main():
 
     # --- Reanudacion ---
     done = {}
-    if os.path.exists(CSV_PATH):
-        with open(CSV_PATH, newline="") as f:
+    if os.path.exists(csv_path):
+        with open(csv_path, newline="") as f:
             for r in csv.DictReader(f):
                 done[r["name"]] = r
         print(f"Reanudando: {len(done)} experimentos ya hechos\n")
 
-    os.makedirs("results", exist_ok=True)
-    f = open(CSV_PATH, "a" if done else "w", newline="")
+    f = open(csv_path, "a" if done else "w", newline="")
     writer = csv.DictWriter(f, fieldnames=FIELDS)
     if not done:
         writer.writeheader()
@@ -217,7 +208,7 @@ def main():
         for k, val_mask in enumerate(fold_masks):
             tr_mask = pool_mask & ~val_mask
             _, acc, ep = train_model(X[tr_mask], y_t[tr_mask], X[val_mask], y_t[val_mask],
-                                     reg=REGS[reg_name], seed=SEED + k)
+                                     reg=REGS[reg_name], seed=seed + k, max_epochs=max_epochs)
             accs.append(acc)
             eps.append(ep)
         row = {"stage": stage, "name": name, "features": fset, "context": ctx,
@@ -255,16 +246,24 @@ def main():
     ref = done["de|ctx0|none"]
     ref_val = float(ref["val_acc_mean"])
     ref_eps = [int(e) for e in str(ref["best_epochs"]).split("|")]
-    lines = []
+    y_test = y_t[test_mask]
+    lines, final = [], {}
     for label, fs, ctx, rg, val, eps in [
             ("MEJOR", best_fs, best_ctx, best_reg, best_val, best_eps),
             ("REFERENCIA de_LDS 62ch", "de", 0, "none", ref_val, ref_eps)]:
         X = build_X(fs, ctx)
         n_ep = max(1, int(round(np.mean(eps))))
-        accs = []
+        accs, per_seed = [], []
         for s in FINAL_SEEDS:
             m, _, _ = train_model(X[pool_mask], y_t[pool_mask], reg=REGS[rg], epochs=n_ep, seed=s)
-            accs.append((predict_proba(m, X[test_mask]).argmax(1) == y_t[test_mask]).float().mean().item())
+            preds = predict_proba(m, X[test_mask]).argmax(1)
+            accs.append((preds == y_test).float().mean().item())
+            per_seed.append({"seed": s, **compute_metrics(y_test.cpu().numpy(),
+                                                          preds.cpu().numpy())})
+        final[label] = {"features": fs, "context": ctx, "reg": rg, "input_dim": X.shape[1],
+                        "val_acc_cv": val, "epochs": n_ep,
+                        "test_acc_mean": float(np.mean(accs)),
+                        "test_acc_std": float(np.std(accs)), "per_seed": per_seed}
         lines += [f"{label}: features={fs}  contexto={ctx}  reg={rg}  input_dim={X.shape[1]}",
                   f"  red             : {NET}",
                   f"  val_acc CV      : {val:.4f}",
@@ -275,15 +274,26 @@ def main():
             probs = sum(predict_proba(train_model(X[pool_mask], y_t[pool_mask], reg=REGS[rg],
                                                   epochs=n_ep, seed=s)[0], X[test_mask])
                         for s in ENSEMBLE_SEEDS)
-            ens = (probs.argmax(1) == y_t[test_mask]).float().mean().item()
+            ens = (probs.argmax(1) == y_test).float().mean().item()
+            final[label]["ensemble"] = {"seeds": ENSEMBLE_SEEDS,
+                                        **compute_metrics(y_test.cpu().numpy(),
+                                                          probs.argmax(1).cpu().numpy())}
             lines.append(f"  TEST ensemble {len(ENSEMBLE_SEEDS)} semillas: {ens:.4f}")
         lines.append("")
 
     summary = "\n".join(lines)
     print(summary)
-    with open(SUMMARY_PATH, "w", encoding="utf-8") as fo:
+    with open(summary_path, "w", encoding="utf-8") as fo:
         fo.write(summary)
-    print(f"Resumen guardado en {SUMMARY_PATH}")
+    print(f"Resumen guardado en {summary_path}")
+
+    config = {"experiment": EXPERIMENT, "channels": args.channels, "seed": seed,
+              "max_epochs": max_epochs, "patience": PATIENCE, "net": NET,
+              "feature_sets": FEATURE_SETS, "contexts": CONTEXTS, "regs": REGS,
+              "cv_folds": cfg.CV_FOLDS, "test_subjects": cfg.TEST_SUBJECTS,
+              "final_seeds": FINAL_SEEDS, "ensemble_seeds": ENSEMBLE_SEEDS}
+    metrics = {"seed": seed, **final["MEJOR"]["per_seed"][0], "final": final}
+    save_run(out_dir, config, metrics)
 
 
 if __name__ == "__main__":

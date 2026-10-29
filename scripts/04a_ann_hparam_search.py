@@ -1,5 +1,5 @@
 """
-Random search de hiperparametros para la ANN (MLP) sobre SEED de_LDS.
+Experimento 04a - Random search de hiperparametros para la ANN (MLP) sobre SEED de_LDS.
 
 Protocolo (sin tocar el test hasta el final):
   - Sujetos 1-3 -> test, reservados. Solo se usan una vez al final.
@@ -11,11 +11,20 @@ Protocolo (sin tocar el test hasta el final):
     sujetos durante la media de epochs optimas de los folds, con 3 semillas,
     y se evalua en test.
 
-Resultados:
-  results/ann_hparam_results.csv  una fila por configuracion (se puede reanudar)
-  results/ann_best.txt            resumen de la mejor configuracion + test
+--channels both (por defecto) busca tambien el numero de canales (4ch/62ch);
+--channels 4|62 fuerza todos los trials a ese numero de canales (el resto de
+hiperparametros sorteados no cambia).
+
+Uso:
+  python scripts/04a_ann_hparam_search.py
+Salida (se puede reanudar):
+  results/04a_ann_hparam_search/<both|4ch|62ch>_seed<N>/
+    ann_hparam_results.csv  una fila por configuracion
+    ann_best.txt            resumen de la mejor configuracion + test
+    config.json, metrics.json, confusion_matrix.csv (de la mejor, semilla 0)
 """
 
+import argparse
 import os
 import csv
 import time
@@ -23,19 +32,18 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-import train_ann as base
-from train_ann import load_seed_features, normalize_per_subject, CHANNEL_INDICES
+from eeg_emotion import config as cfg
+from eeg_emotion.data import (load_seed_features, normalize_per_subject, channel_columns,
+                              cv_fold_masks)
+from eeg_emotion.models import FlexANN
+from eeg_emotion.training import class_weights, compute_metrics, run_dir, save_run
 
-CSV_PATH     = "results/ann_hparam_results.csv"
-SUMMARY_PATH = "results/ann_best.txt"
+EXPERIMENT   = "04a_ann_hparam_search"
 N_TRIALS     = 40
 MAX_EPOCHS   = 40
 PATIENCE     = 6        # early stopping sobre val_acc
-TEST_SUBJECTS = [1, 2, 3]
-FOLDS = [[4, 5, 6], [7, 8, 9], [10, 11, 12], [13, 14, 15]]
 FINAL_SEEDS  = [0, 1, 2]
-SEED         = 42
-DEVICE       = "cuda" if torch.cuda.is_available() else "cpu"
+DEVICE       = cfg.DEVICE
 
 FIELDS = ["trial", "channels", "hidden", "n_layers", "dropout", "lr",
           "weight_decay", "batch_size", "n_params", "best_epochs",
@@ -43,49 +51,26 @@ FIELDS = ["trial", "channels", "hidden", "n_layers", "dropout", "lr",
 
 
 # ============================================================
-# MODELO FLEXIBLE
-# ============================================================
-class FlexANN(nn.Module):
-    """n_layers bloques Linear -> BN -> ReLU -> Dropout, anchura hidden,
-    hidden//2, hidden//4... (igual patron que EmotionANN) y Linear final."""
-    def __init__(self, input_dim, hidden, n_layers, dropout):
-        super().__init__()
-        layers, in_dim = [], input_dim
-        for i in range(n_layers):
-            out_dim = max(hidden // (2 ** i), 16)
-            layers += [nn.Linear(in_dim, out_dim), nn.BatchNorm1d(out_dim),
-                       nn.ReLU(), nn.Dropout(dropout)]
-            in_dim = out_dim
-        layers.append(nn.Linear(in_dim, 3))
-        self.net = nn.Sequential(*layers)
-
-    def forward(self, x):
-        return self.net(x)
-
-
-# ============================================================
 # ENTRENAMIENTO
 # ============================================================
-def class_weights(y):
-    counts = np.bincount(y, minlength=3).astype(np.float32)
-    w = counts.sum() / (3.0 * counts)
-    return torch.tensor(w / w.mean(), dtype=torch.float32, device=DEVICE)
-
-
 @torch.no_grad()
-def accuracy(model, X, y, bs=4096):
+def predict(model, X, bs=4096):
     model.eval()
-    preds = torch.cat([model(X[i:i + bs]).argmax(1) for i in range(0, len(X), bs)])
-    return (preds == y).float().mean().item()
+    return torch.cat([model(X[i:i + bs]).argmax(1) for i in range(0, len(X), bs)])
 
 
-def train_model(hp, X_tr, y_tr, X_val=None, y_val=None, epochs=None, seed=SEED):
+def accuracy(model, X, y, bs=4096):
+    return (predict(model, X, bs) == y).float().mean().item()
+
+
+def train_model(hp, X_tr, y_tr, X_val=None, y_val=None, epochs=None, seed=42,
+                max_epochs=MAX_EPOCHS):
     """Entrena con early stopping si hay val. Devuelve (modelo, best_val_acc, best_epoch)."""
-    epochs = epochs or MAX_EPOCHS
+    epochs = epochs or max_epochs
     torch.manual_seed(seed)
     model = FlexANN(X_tr.shape[1], hp["hidden"], hp["n_layers"], hp["dropout"]).to(DEVICE)
     optim = torch.optim.Adam(model.parameters(), lr=hp["lr"], weight_decay=hp["weight_decay"])
-    loss_fn = nn.CrossEntropyLoss(weight=class_weights(y_tr.cpu().numpy()))
+    loss_fn = nn.CrossEntropyLoss(weight=class_weights(y_tr.cpu().numpy(), DEVICE))
     bs = hp["batch_size"]
 
     best_acc, best_epoch, best_state, no_impr = -1.0, 0, None, 0
@@ -131,7 +116,7 @@ def sample_hp(rng):
     }
 
 
-# Trial 0 = configuracion actual de train_ann.py, como referencia
+# Trial 0 = configuracion de 02_ann_cross_subject.py, como referencia
 BASELINE_HP = {"channels": "4ch", "hidden": 128, "n_layers": 2, "dropout": 0.3,
                "lr": 1e-3, "weight_decay": 1e-4, "batch_size": 256}
 
@@ -146,44 +131,68 @@ def parse_row(row):
             "best_epochs": [int(e) for e in row["best_epochs"].split("|")]}
 
 
+def parse_args():
+    p = argparse.ArgumentParser(description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--channels", choices=["4", "62", "both"], default="both")
+    p.add_argument("--seed", type=int, default=42,
+                   help="semilla del sorteo de hiperparametros y de los folds")
+    p.add_argument("--trials", type=int, default=N_TRIALS,
+                   help="n. de configuraciones aleatorias (ademas de la baseline)")
+    p.add_argument("--max-epochs", type=int, default=MAX_EPOCHS,
+                   help="solo para pruebas rapidas (por defecto %(default)s)")
+    p.add_argument("--out", default=None, help="carpeta de salida (por defecto en results/)")
+    return p.parse_args()
+
+
 # ============================================================
 # MAIN
 # ============================================================
 def main():
+    args = parse_args()
+    seed = args.seed
+    ch_tag = "both" if args.channels == "both" else f"{args.channels}ch"
+    out_dir = args.out or run_dir(EXPERIMENT, ch_tag, seed)
+    os.makedirs(out_dir, exist_ok=True)
+    csv_path = os.path.join(out_dir, "ann_hparam_results.csv")
+    summary_path = os.path.join(out_dir, "ann_best.txt")
+
+    def force_channels(hp):
+        return hp if ch_tag == "both" else {**hp, "channels": ch_tag}
+
     torch.set_num_threads(os.cpu_count() or 1)
     print(f"Dispositivo: {DEVICE}  hilos: {torch.get_num_threads()}")
 
     # Carga los 62 canales una vez; la variante 4ch son columnas de esta matriz
-    base.USE_ALL_CHANNELS = True
-    X_raw, y, subject = load_seed_features(base.DATA_DIR)
+    X_raw, meta = load_seed_features(62)
+    y, subject = meta["y"], meta["subject"]
     X_all = normalize_per_subject(X_raw, subject)                    # (N, 310)
-    cols_4ch = [c * 5 + b for c in CHANNEL_INDICES for b in range(5)]
+    cols_4ch = channel_columns(cfg.CHANNEL_INDICES)
     X_by_ch = {"62ch": torch.from_numpy(X_all).to(DEVICE),
                "4ch":  torch.from_numpy(np.ascontiguousarray(X_all[:, cols_4ch])).to(DEVICE)}
     y_t = torch.from_numpy(y).to(DEVICE)
     print(f"Datos: {X_all.shape[0]} muestras  (4ch=20 / 62ch=310 features)\n")
 
-    fold_masks = [np.isin(subject, f) for f in FOLDS]
-    pool_mask  = np.isin(subject, sum(FOLDS, []))
-    test_mask  = np.isin(subject, TEST_SUBJECTS)
+    fold_masks, pool_mask = cv_fold_masks(subject)
+    test_mask = np.isin(subject, cfg.TEST_SUBJECTS)
 
     # --- Reanudacion ---
     results = []
-    if os.path.exists(CSV_PATH):
-        with open(CSV_PATH, newline="") as f:
+    if os.path.exists(csv_path):
+        with open(csv_path, newline="") as f:
             results = [parse_row(r) for r in csv.DictReader(f)]
         print(f"Reanudando: {len(results)} trials ya completados\n")
     done = {r["trial"] for r in results}
 
-    os.makedirs("results", exist_ok=True)
-    rng = np.random.default_rng(SEED)
-    with open(CSV_PATH, "a" if done else "w", newline="") as f:
+    rng = np.random.default_rng(seed)
+    with open(csv_path, "a" if done else "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=FIELDS)
         if not done:
             writer.writeheader()
 
-        for trial in range(N_TRIALS + 1):
+        for trial in range(args.trials + 1):
             hp = BASELINE_HP if trial == 0 else sample_hp(rng)   # RNG determinista
+            hp = force_channels(hp)
             if trial in done:
                 continue
 
@@ -193,7 +202,8 @@ def main():
             for k, val_mask in enumerate(fold_masks):
                 tr_mask = pool_mask & ~val_mask
                 model, acc, ep = train_model(hp, X[tr_mask], y_t[tr_mask],
-                                             X[val_mask], y_t[val_mask], seed=SEED + k)
+                                             X[val_mask], y_t[val_mask], seed=seed + k,
+                                             max_epochs=args.max_epochs)
                 fold_accs.append(acc)
                 best_epochs.append(ep)
 
@@ -208,7 +218,7 @@ def main():
             f.flush()
             results.append({**row, "best_epochs": best_epochs})
 
-            print(f"Trial {trial:2d}/{N_TRIALS}  {hp['channels']:>4} h={hp['hidden']:3d} "
+            print(f"Trial {trial:2d}/{args.trials}  {hp['channels']:>4} h={hp['hidden']:3d} "
                   f"L={hp['n_layers']} drop={hp['dropout']:.2f} lr={hp['lr']:.1e} "
                   f"wd={hp['weight_decay']:.1e} bs={hp['batch_size']:3d}  "
                   f"val={row['val_acc_mean']:.4f}±{row['val_acc_std']:.4f}  "
@@ -224,15 +234,23 @@ def main():
 
     # --- Reentreno final de la mejor y de la baseline, evaluacion en test ---
     baseline = next(r for r in results if r["trial"] == 0)
-    lines = []
-    for name, r in [("MEJOR", results[0]), ("BASELINE (train_ann.py)", baseline)]:
+    lines, final = [], {}
+    y_test = y_t[test_mask]
+    for name, r in [("MEJOR", results[0]), ("BASELINE (02_ann_cross_subject.py)", baseline)]:
         hp = {k: r[k] for k in BASELINE_HP}
         n_epochs = max(1, int(round(np.mean(r["best_epochs"]))))
         X = X_by_ch[hp["channels"]]
-        test_accs = []
+        test_accs, per_seed = [], []
         for s in FINAL_SEEDS:
             model, _, _ = train_model(hp, X[pool_mask], y_t[pool_mask], epochs=n_epochs, seed=s)
-            test_accs.append(accuracy(model, X[test_mask], y_t[test_mask]))
+            preds = predict(model, X[test_mask])
+            test_accs.append((preds == y_test).float().mean().item())
+            per_seed.append({"seed": s, **compute_metrics(y_test.cpu().numpy(),
+                                                          preds.cpu().numpy())})
+        final[name] = {"trial": r["trial"], "hp": hp, "epochs": n_epochs,
+                       "val_acc_cv": r["val_acc_mean"],
+                       "test_acc_mean": float(np.mean(test_accs)),
+                       "test_acc_std": float(np.std(test_accs)), "per_seed": per_seed}
         lines += [f"{name}: trial {r['trial']}",
                   f"  hiperparametros : {hp}",
                   f"  val_acc CV      : {r['val_acc_mean']:.4f} ± {float(r['val_acc_std']):.4f}",
@@ -243,9 +261,17 @@ def main():
 
     summary = "\n".join(lines)
     print("\n" + summary)
-    with open(SUMMARY_PATH, "w", encoding="utf-8") as f:
+    with open(summary_path, "w", encoding="utf-8") as f:
         f.write(summary)
-    print(f"Resumen guardado en {SUMMARY_PATH}")
+    print(f"Resumen guardado en {summary_path}")
+
+    config = {"experiment": EXPERIMENT, "channels": ch_tag, "seed": seed,
+              "n_trials": args.trials, "max_epochs": args.max_epochs, "patience": PATIENCE,
+              "cv_folds": cfg.CV_FOLDS, "test_subjects": cfg.TEST_SUBJECTS,
+              "final_seeds": FINAL_SEEDS, "feature_key": cfg.FEATURE_KEY}
+    best = final["MEJOR"]
+    metrics = {"seed": seed, **best["per_seed"][0], "final": final}
+    save_run(out_dir, config, metrics)
 
 
 if __name__ == "__main__":
