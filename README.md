@@ -20,7 +20,7 @@ Trabajo Fin de Grado de Mónica Fernández. Dataset: SEED (features `de_LDS`, ve
 ## 2. Estructura del repositorio
 
 ```
-tfg-eeg-emotion/
+tfg-snn-monica/
 ├── README.md
 ├── requirements.txt         # versiones con las que se obtuvieron los resultados
 ├── pyproject.toml           # permite "pip install -e ." del paquete eeg_emotion
@@ -62,6 +62,8 @@ El experimento 01 entrena un modelo por sesión, así que guarda en su lugar `se
 Probado con Python 3.14 en Windows 11, solo con CPU.
 
 ```bash
+git clone https://github.com/monicafdezlortal/tfg-snn-monica.git
+cd tfg-snn-monica
 python -m venv .venv
 .venv\Scripts\activate            # Linux/macOS: source .venv/bin/activate
 pip install torch --index-url https://download.pytorch.org/whl/cpu
