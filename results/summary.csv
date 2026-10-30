@@ -1,0 +1,4 @@
+experimento,canales,n_semillas,semillas,accuracy_media,accuracy_std,f1_macro_media,f1_macro_std,accuracy,f1_macro
+02_ann_cross_subject,4ch,5,0 1 2 3 4,0.6236,0.0072,0.6223,0.0065,0.6236 ± 0.0072,0.6223 ± 0.0065
+02_ann_cross_subject,62ch,5,0 1 2 3 4,0.6508,0.0081,0.6514,0.0077,0.6508 ± 0.0081,0.6514 ± 0.0077
+03_snn_cross_subject,4ch,5,0 1 2 3 4,0.6026,0.0041,0.6018,0.0043,0.6026 ± 0.0041,0.6018 ± 0.0043

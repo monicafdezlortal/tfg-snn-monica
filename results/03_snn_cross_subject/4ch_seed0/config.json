@@ -1,0 +1,42 @@
+{
+  "experiment": "03_snn_cross_subject",
+  "model": "EmotionSNN",
+  "channels": 4,
+  "seed": 0,
+  "feature_key": "de_LDS",
+  "input_dim": 20,
+  "normalization": "z-score por sujeto -> [0,1] (clip ±4σ)",
+  "encoding": "rate coding Bernoulli",
+  "T": 50,
+  "neuron": "LIF tau=2.0 v_threshold=0.5 surrogate=ATan",
+  "train_subjects": [
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+  ],
+  "val_subjects": [
+    4,
+    5
+  ],
+  "test_subjects": [
+    1,
+    2,
+    3
+  ],
+  "hidden": 128,
+  "epochs": 50,
+  "batch_size": 256,
+  "lr": 0.001,
+  "weight_decay": 0.0001,
+  "dropout": 0.3,
+  "n_params": 11523,
+  "device": "cpu",
+  "torch_threads": 3
+}

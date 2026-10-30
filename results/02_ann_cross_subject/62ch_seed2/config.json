@@ -1,0 +1,39 @@
+{
+  "experiment": "02_ann_cross_subject",
+  "model": "EmotionANN",
+  "channels": 62,
+  "seed": 2,
+  "feature_key": "de_LDS",
+  "input_dim": 310,
+  "normalization": "z-score por sujeto",
+  "train_subjects": [
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+  ],
+  "val_subjects": [
+    4,
+    5
+  ],
+  "test_subjects": [
+    1,
+    2,
+    3
+  ],
+  "hidden": 128,
+  "epochs": 50,
+  "batch_size": 256,
+  "lr": 0.001,
+  "weight_decay": 0.0001,
+  "dropout": 0.3,
+  "n_params": 48643,
+  "device": "cpu",
+  "torch_threads": 14
+}
