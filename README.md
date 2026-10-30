@@ -123,13 +123,13 @@ Protocolo *subject-dependent* del paper: 15 sujetos × 2 sesiones = 30 experimen
 | Modelo | Canales | Accuracy | F1 macro | Accuracy (%) ± std entre sesiones | Paper (Zheng & Lu 2015) |
 |---|---|---|---|---|---|
 | ANN (`EmotionANN`, 50 epochs) | 4 | 0.7824 ± 0.0043 | 0.7633 ± 0.0048 | 78.24 ± 13.20 | 82.88 ± 10.92 |
-| SVM lineal | 4 | 0.7771 ± 0.0000 | 0.7588 ± 0.0000 | 77.71 ± 14.33 | 82.88 ± 10.92 |
+| SVM lineal | 4 | 0.7667 ± 0.0000 | 0.7455 ± 0.0000 | 76.67 ± 14.98 | 82.88 ± 10.92 |
 | ANN (`EmotionANN`, 50 epochs) | 62 | 0.7829 ± 0.0045 | 0.7597 ± 0.0063 | 78.29 ± 11.83 | DBN 86.08 ± 8.34 |
-| SVM lineal | 62 | 0.7940 ± 0.0000 | 0.7726 ± 0.0000 | 79.40 ± 12.84 | SVM 83.99 ± 9.72 |
+| SVM lineal | 62 | 0.7911 ± 0.0000 | 0.7707 ± 0.0000 | 79.11 ± 12.80 | SVM 83.99 ± 9.72 |
 
 - La SVM no depende de la semilla (desviación 0 entre semillas): solo varía la ANN.
-- Ambos modelos quedan unos 4-5 puntos por debajo del paper, con una dispersión entre sesiones parecida.
-- En este protocolo, 4 canales rinden casi igual que 62 (ANN 78.2 frente a 78.3), en línea con la conclusión del paper.
+- Todos quedan por debajo del paper, con una dispersión entre sesiones parecida: con 4 canales, la ANN 4.6 puntos y la SVM 6.2; con 62 canales, la SVM 4.9 puntos por debajo de la SVM del paper (y la ANN 7.8 por debajo de su DBN).
+- En este protocolo, 4 canales rinden casi igual que 62 (ANN 78.2 frente a 78.3; SVM 76.7 frente a 79.1), en línea con la conclusión del paper.
 
 **Modelos base cross-subject (experimentos 02 y 03, 5 semillas: 0-4)**
 
@@ -183,7 +183,7 @@ Al pasar del protocolo por sesión (01, ~78 %) al cross-subject (02, 62-65 %), l
   - Sirve para comprobar que la ANN y el pipeline de datos dan resultados del orden del paper antes de pasar al protocolo cross-subject, más exigente.
   - Se usan 2 sesiones por sujeto, como en el paper (el SEED público trae 3; `--sessions 3` da 45 experimentos).
   - Sin validación: la ANN entrena 50 epochs fijas, y el test no se usa para elegir epoch. La normalización usa solo las estadísticas del train de cada sesión.
-  - El C de la SVM lineal se elige en cada sesión con validación cruzada `GroupKFold` de 3 folds agrupada por trial dentro del train, para que ventanas de un mismo trial no caigan a la vez en train y validación.
+  - El C de la SVM lineal se elige en cada sesión, entre 2⁻¹⁶ y 2¹⁰ (potencias pares de 2), con validación cruzada `GroupKFold` de 3 folds agrupada por trial dentro del train, para que ventanas de un mismo trial no caigan a la vez en train y validación.
 
 **Referencias**
 
@@ -198,7 +198,9 @@ Al pasar del protocolo por sesión (01, ~78 %) al cross-subject (02, 62-65 %), l
 - **La normalización por sujeto usa los datos (sin etiquetas) de cada sujeto de test.** En uso real haría falta una sesión de calibración del usuario nuevo.
 - **El suavizado LDS de las features de SEED no es causal**: usa todo el trial. Un sistema en tiempo real tendría que usar un filtro causal (p. ej. media móvil o Kalman sin suavizado).
 - **Las etiquetas son por película** (15 trials por sesión) y se asignan a todas sus ventanas, aunque la emoción no sea constante a lo largo del clip.
-- **Réplica de Zheng & Lu: ~4-5 puntos por debajo del paper.** El paper no detalla todo el preprocesado ni cómo eligió los hiperparámetros. Además, el C elegido para la SVM cae a menudo en el extremo inferior de la rejilla (2⁻¹⁰): en 10 de 30 sesiones con 4 canales y en 6 de 30 con 62. Ampliar la rejilla podría mejorar algo la SVM.
+- **Réplica de Zheng & Lu: entre 4.6 y 6.2 puntos por debajo del paper.** El paper no detalla todo el preprocesado ni cómo eligió los hiperparámetros.
+  - Con la rejilla inicial de C (2⁻¹⁰ a 2¹⁰), el C elegido caía a menudo en el extremo inferior: en 10 de 30 sesiones con 4 canales y en 6 de 30 con 62. Por eso se amplió a 2⁻¹⁶ - 2¹⁰. Ahora solo 5 de 30 sesiones con 4 canales quedan en un extremo (2 en 2⁻¹⁶ y 3 en 2¹⁰) y ninguna con 62.
+  - La ampliación no mejora la SVM: baja de 77.71 a 76.67 % con 4 canales y de 79.40 a 79.11 % con 62. La validación cruzada de 3 folds (3 trials por fold) es ruidosa y a veces elige un C muy pequeño que generaliza peor al test. La diferencia con el paper, por tanto, no se debe a la rejilla de C.
 - **La SNN se entrena y evalúa en software** (SpikingJelly, CPU). No se han medido latencia ni energía en hardware.
 - **El despliegue en AKD1000 exige convertir el modelo** de PyTorch a Keras/QuantizeML, cuantizarlo a 4 bits y cuantizar la entrada a enteros (uint8). Esto puede costar accuracy respecto a la ANN en float32.
 

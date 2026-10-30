@@ -57,7 +57,7 @@ WEIGHT_DECAY = 1e-4
 DROPOUT      = 0.3
 
 # SVM lineal
-SVM_C_GRID   = 2.0 ** np.arange(-10, 11, 2)
+SVM_C_GRID   = 2.0 ** np.arange(-16, 11, 2)     # 2^-16 ... 2^10
 SVM_CV_FOLDS = 3
 SVM_MAX_ITER = 20000
 
