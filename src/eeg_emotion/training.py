@@ -133,8 +133,18 @@ def run_dir(experiment, channels, seed, root=cfg.RESULTS_DIR):
     return path
 
 
+def _write_confusion_matrix(path, cm):
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["real\\predicha"] + cfg.CLASS_NAMES)
+        for name, row in zip(cfg.CLASS_NAMES, cm):
+            w.writerow([name] + row)
+
+
 def save_run(out_dir, config, metrics):
-    """Guarda config.json, metrics.json y confusion_matrix.csv en out_dir."""
+    """Guarda config.json, metrics.json y confusion_matrix.csv en out_dir.
+    Si metrics trae varios modelos (metrics["modelos"][nombre]), escribe una
+    confusion_matrix_<nombre>.csv por modelo."""
     os.makedirs(out_dir, exist_ok=True)
     with open(os.path.join(out_dir, "config.json"), "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2, ensure_ascii=False)
@@ -142,10 +152,9 @@ def save_run(out_dir, config, metrics):
         json.dump(metrics, f, indent=2, ensure_ascii=False)
     cm = metrics.get("confusion_matrix")
     if cm is not None:
-        with open(os.path.join(out_dir, "confusion_matrix.csv"), "w", newline="",
-                  encoding="utf-8") as f:
-            w = csv.writer(f)
-            w.writerow(["real\\predicha"] + cfg.CLASS_NAMES)
-            for name, row in zip(cfg.CLASS_NAMES, cm):
-                w.writerow([name] + row)
+        _write_confusion_matrix(os.path.join(out_dir, "confusion_matrix.csv"), cm)
+    for name, m in metrics.get("modelos", {}).items():
+        if m.get("confusion_matrix") is not None:
+            _write_confusion_matrix(os.path.join(out_dir, f"confusion_matrix_{name}.csv"),
+                                    m["confusion_matrix"])
     print(f"Resultados guardados en: {out_dir}")

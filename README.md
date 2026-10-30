@@ -11,7 +11,7 @@ Trabajo Fin de Grado de Mónica Fernández. Dataset: SEED (features `de_LDS`, ve
 
 | Exp. | Descripción | Estado |
 |---|---|---|
-| 01 | Réplica del protocolo de Zheng & Lu 2015 (por sesión, trials 1-9 train / 10-15 test), ANN + SVM lineal | ⏳ Pendiente de integrar el script base |
+| 01 | Réplica del protocolo de Zheng & Lu 2015 (por sesión, trials 1-9 train / 10-15 test), ANN + SVM lineal | ✅ Hecho (5 semillas, 4 y 62 canales, 2 sesiones por sujeto) |
 | 02 | ANN cross-subject (test 1-3, val 4-5, train 6-15), z-score por sujeto | ✅ Hecho (5 semillas, 4 y 62 canales) |
 | 03 | SNN cross-subject con el mismo split | ✅ Hecho (4 canales) · ⏳ 62 canales pendiente (a decidir con el tutor) |
 | 04 | Búsqueda de hiperparámetros (ANN, SNN) y de features de entrada (ANN) | ✅ Hecho |
@@ -31,6 +31,7 @@ tfg-eeg-emotion/
 │   ├── models.py            # EmotionANN, FlexANN, EmotionSNN, FlexSNN
 │   └── training.py          # bucle de entrenamiento, evaluate, métricas, semillas
 ├── scripts/                 # un script por experimento
+│   ├── 01_zheng_lu_ann_svm.py
 │   ├── 02_ann_cross_subject.py
 │   ├── 03_snn_cross_subject.py
 │   ├── 04a_ann_hparam_search.py
@@ -50,6 +51,8 @@ Cada script acepta `--channels 4|62` y `--seed N`, y guarda en su carpeta de `re
 - `config.json`: hiperparámetros, split y semilla.
 - `metrics.json`: accuracy, F1 macro, F1 por clase, matriz de confusión e historial por epoch.
 - `confusion_matrix.csv` y `model.pth` (los `.pth` no se suben a git).
+
+El experimento 01 entrena un modelo por sesión, así que guarda en su lugar `sessions.csv` (accuracy, F1 y C del SVM de cada sesión) y una matriz de confusión acumulada por modelo (`confusion_matrix_EmotionANN.csv`, `confusion_matrix_LinearSVC.csv`). Con `--sessions 3` la carpeta es `<canales>_3ses_seed<N>`.
 
 ## 3. Instalación
 
@@ -83,15 +86,15 @@ Cada `.mat` tiene, para cada trial t = 1..15, la clave `de_LDS<t>` con forma `(6
 
 | Exp. | Comando | Memoria |
 |---|---|---|
-| 01 | *(pendiente)* `python scripts/01_zheng_lu_ann_svm.py --channels 4 --seed 0` | 4.1 Réplica del protocolo de Zheng & Lu |
+| 01 | `python scripts/01_zheng_lu_ann_svm.py --channels 4 --seed 0` (`--sessions 3` para usar las 3 sesiones) | 4.1 Réplica del protocolo de Zheng & Lu |
 | 02 | `python scripts/02_ann_cross_subject.py --channels 4 --seed 0` | 4.2 Evaluación cross-subject; 4.4 Comparación 4 vs 62 canales |
 | 03 | `python scripts/03_snn_cross_subject.py --channels 4 --seed 0` | 4.3 ANN frente a SNN |
 | 04a | `python scripts/04a_ann_hparam_search.py` | 3.x Selección de hiperparámetros (provisional) |
 | 04b | `python scripts/04b_snn_hparam_search.py` | 3.x Selección de hiperparámetros (provisional) |
 | 04c | `python scripts/04c_ann_feature_experiments.py` | 3.x Selección de hiperparámetros (provisional) |
-| Tabla | `python scripts/aggregate_seeds.py` | Tablas de resultados de 4.2-4.4 |
+| Tabla | `python scripts/aggregate_seeds.py` | Tablas de resultados de 4.1-4.4 |
 
-Para varias semillas y los dos conjuntos de canales (02 y 03):
+Para varias semillas y los dos conjuntos de canales (01, 02 y 03):
 
 ```bash
 for ch in 4 62; do for s in 0 1 2 3 4; do
@@ -100,15 +103,32 @@ done; done
 python scripts/aggregate_seeds.py
 ```
 
-- **Pruebas rápidas.** `--epochs 2` en 02/03, y `--trials 1 --max-epochs 1` en las búsquedas.
+- **Pruebas rápidas.** `--epochs 2` en 01/02/03, y `--trials 1 --max-epochs 1` en las búsquedas.
 - **Reanudar.** Las búsquedas (04a/04b/04c) se reanudan solas desde su CSV si se interrumpen.
-- **Duración.** La SNN tarda unos 2 min por epoch con 4 canales en CPU, así que 50 epochs llevan más de 1.5 h por semilla. Las 5 semillas de la tabla se ejecutaron en paralelo con `OMP_NUM_THREADS=3`. El número de hilos queda en `config.json` porque en CPU puede afectar a los últimos decimales. Conviene **desactivar la suspensión del equipo** durante las ejecuciones largas: si se suspende, la columna `seconds` de los CSV incluye el tiempo suspendido.
+- **Duración.** El experimento 01 tarda unos 5 min por semilla (4 canales) y unos 6 min (62 canales). La SNN tarda unos 2 min por epoch con 4 canales en CPU, así que 50 epochs llevan más de 1.5 h por semilla. Las 5 semillas de la tabla se ejecutaron en paralelo con `OMP_NUM_THREADS=3`. El número de hilos queda en `config.json` porque en CPU puede afectar a los últimos decimales. Conviene **desactivar la suspensión del equipo** durante las ejecuciones largas: si se suspende, la columna `seconds` de los CSV incluye el tiempo suspendido.
 
 ## 6. Resultados actuales
 
-Test cross-subject (sujetos 1-3, 30 546 ventanas). Media ± desviación típica (poblacional) entre semillas. Lo genera `scripts/aggregate_seeds.py` en `results/summary.csv`.
+Media ± desviación típica (poblacional) entre semillas. Lo genera `scripts/aggregate_seeds.py` en `results/summary.csv`.
 
-**Modelos base (experimentos 02 y 03, 5 semillas: 0-4)**
+**Réplica de Zheng & Lu (experimento 01, 5 semillas: 0-4)**
+
+Protocolo *subject-dependent* del paper: 15 sujetos × 2 sesiones = 30 experimentos; en cada uno, trials 1-9 para entrenar y 10-15 para test. La accuracy de cada semilla es la media de las 30 sesiones. La última columna es la desviación entre sesiones (media de las 5 semillas), que es la que reporta el paper.
+
+| Modelo | Canales | Accuracy | F1 macro | Accuracy (%) ± std entre sesiones | Paper (Zheng & Lu 2015) |
+|---|---|---|---|---|---|
+| ANN (`EmotionANN`, 50 epochs) | 4 | 0.7824 ± 0.0043 | 0.7633 ± 0.0048 | 78.24 ± 13.20 | 82.88 ± 10.92 |
+| SVM lineal | 4 | 0.7771 ± 0.0000 | 0.7588 ± 0.0000 | 77.71 ± 14.33 | 82.88 ± 10.92 |
+| ANN (`EmotionANN`, 50 epochs) | 62 | 0.7829 ± 0.0045 | 0.7597 ± 0.0063 | 78.29 ± 11.83 | DBN 86.08 ± 8.34 |
+| SVM lineal | 62 | 0.7940 ± 0.0000 | 0.7726 ± 0.0000 | 79.40 ± 12.84 | SVM 83.99 ± 9.72 |
+
+- La SVM no depende de la semilla (desviación 0 entre semillas): solo varía la ANN.
+- Ambos modelos quedan unos 4-5 puntos por debajo del paper, con una dispersión entre sesiones parecida.
+- En este protocolo, 4 canales rinden casi igual que 62 (ANN 78.2 frente a 78.3), en línea con la conclusión del paper.
+
+**Modelos base cross-subject (experimentos 02 y 03, 5 semillas: 0-4)**
+
+Test con los sujetos 1-3 (30 546 ventanas), no vistos en el entrenamiento.
 
 | Modelo | Exp. | Canales | Accuracy | F1 macro |
 |---|---|---|---|---|
@@ -116,7 +136,6 @@ Test cross-subject (sujetos 1-3, 30 546 ventanas). Media ± desviación típica 
 | ANN (`EmotionANN`) | 02 | 62 | 0.6508 ± 0.0081 | 0.6514 ± 0.0077 |
 | SNN (`EmotionSNN`, LIF, T = 50) | 03 | 4 | 0.6026 ± 0.0041 | 0.6018 ± 0.0043 |
 | SNN (`EmotionSNN`) | 03 | 62 | pendiente (a decidir con el tutor) | |
-| Réplica Zheng & Lu (por sesión) | 01 | 4 / 62 | pendiente | pendiente |
 
 **Búsquedas (experimento 04, ejecutadas antes de la reorganización)**
 
@@ -130,7 +149,7 @@ Configuración elegida por validación (nunca por test) y evaluada en test una s
 | 04c ANN, referencia de_LDS (red fija 256 → 128) | de_LDS, sin contexto ni regularización | 62 | 0.6879 ± 0.0099 |
 | 04c ANN, greedy de features, contexto y regularización | de + dasm + rasm, ruido gaussiano σ = 0.5 | 62 | 0.6748 ± 0.0029 (ensemble de 5: 0.6927) |
 
-Con 4 canales, la SNN pierde unos 2.1 puntos respecto a la ANN equivalente (0.603 frente a 0.624). Con la misma red, pasar de 4 a 62 canales mejora la ANN en unos 2.7 puntos. En las búsquedas, la mejor ANN de 62 canales llega a ~0.70. En 04c, añadir features de asimetría mejora la validación pero no el test.
+Al pasar del protocolo por sesión (01, ~78 %) al cross-subject (02, 62-65 %), la ANN pierde unos 15 puntos: generalizar a personas nuevas es mucho más difícil que a trials nuevos de la misma persona. Con 4 canales, la SNN pierde unos 2.1 puntos respecto a la ANN equivalente (0.603 frente a 0.624). Con la misma red, pasar de 4 a 62 canales mejora la ANN en unos 2.7 puntos. En las búsquedas, la mejor ANN de 62 canales llega a ~0.70. En 04c, añadir features de asimetría mejora la validación pero no el test.
 
 ## 7. Decisiones metodológicas clave
 
@@ -154,7 +173,12 @@ Con 4 canales, la SNN pierde unos 2.1 puntos respecto a la ANN equivalente (0.60
   - BatchNorm antes de cada neurona LIF y umbral 0.5 (con el umbral 1.0 por defecto las neuronas no disparaban y la loss se quedaba en ln 3).
   - Capa de salida sin LIF, para tener logits continuos para CrossEntropy.
   - Los spikes se regeneran en cada epoch, lo que actúa como data augmentation.
-- **Pesos de clase** inversos a la frecuencia en train, en todos los modelos.
+- **Pesos de clase** inversos a la frecuencia en train, en todos los modelos salvo en la réplica de Zheng & Lu (01), que sigue el script original sin pesos.
+- **Réplica de Zheng & Lu (01).**
+  - Sirve para comprobar que la ANN y el pipeline de datos dan resultados del orden del paper antes de pasar al protocolo cross-subject, más exigente.
+  - Se usan 2 sesiones por sujeto, como en el paper (el SEED público trae 3; `--sessions 3` da 45 experimentos).
+  - Sin validación: la ANN entrena 50 epochs fijas, y el test no se usa para elegir epoch. La normalización usa solo las estadísticas del train de cada sesión.
+  - El C de la SVM lineal se elige en cada sesión con validación cruzada `GroupKFold` de 3 folds agrupada por trial dentro del train, para que ventanas de un mismo trial no caigan a la vez en train y validación.
 
 **Referencias**
 
@@ -169,6 +193,7 @@ Con 4 canales, la SNN pierde unos 2.1 puntos respecto a la ANN equivalente (0.60
 - **La normalización por sujeto usa los datos (sin etiquetas) de cada sujeto de test.** En uso real haría falta una sesión de calibración del usuario nuevo.
 - **El suavizado LDS de las features de SEED no es causal**: usa todo el trial. Un sistema en tiempo real tendría que usar un filtro causal (p. ej. media móvil o Kalman sin suavizado).
 - **Las etiquetas son por película** (15 trials por sesión) y se asignan a todas sus ventanas, aunque la emoción no sea constante a lo largo del clip.
+- **Réplica de Zheng & Lu: ~4-5 puntos por debajo del paper.** El paper no detalla todo el preprocesado ni cómo eligió los hiperparámetros. Además, el C elegido para la SVM cae a menudo en el extremo inferior de la rejilla (2⁻¹⁰): en 10 de 30 sesiones con 4 canales y en 6 de 30 con 62. Ampliar la rejilla podría mejorar algo la SVM.
 - **La SNN se entrena y evalúa en software** (SpikingJelly, CPU). No se han medido latencia ni energía en hardware.
 - **El despliegue en AKD1000 exige convertir el modelo** de PyTorch a Keras/QuantizeML, cuantizarlo a 4 bits y cuantizar la entrada a enteros (uint8). Esto puede costar accuracy respecto a la ANN en float32.
 

@@ -1,0 +1,417 @@
+{
+  "seed": 0,
+  "modelos": {
+    "EmotionANN": {
+      "accuracy": 0.775650289017341,
+      "accuracy_std_sesiones": 0.14134442114596357,
+      "f1_macro": 0.7553262437082081,
+      "f1_macro_std_sesiones": 0.1642171276735485,
+      "confusion_matrix": [
+        [
+          8416,
+          3469,
+          1285
+        ],
+        [
+          2145,
+          11136,
+          819
+        ],
+        [
+          854,
+          743,
+          12653
+        ]
+      ],
+      "n_test": 41520,
+      "por_sesion": [
+        {
+          "subject": 1,
+          "session": 1,
+          "accuracy": 0.7622832369942196,
+          "f1_macro": 0.7103693402290018
+        },
+        {
+          "subject": 1,
+          "session": 2,
+          "accuracy": 0.7348265895953757,
+          "f1_macro": 0.6737533867943908
+        },
+        {
+          "subject": 2,
+          "session": 1,
+          "accuracy": 0.45375722543352603,
+          "f1_macro": 0.4490246724871921
+        },
+        {
+          "subject": 2,
+          "session": 2,
+          "accuracy": 0.8432080924855492,
+          "f1_macro": 0.8459333725657272
+        },
+        {
+          "subject": 3,
+          "session": 1,
+          "accuracy": 0.8807803468208093,
+          "f1_macro": 0.8841535760918129
+        },
+        {
+          "subject": 3,
+          "session": 2,
+          "accuracy": 0.7695086705202312,
+          "f1_macro": 0.7530852016518302
+        },
+        {
+          "subject": 4,
+          "session": 1,
+          "accuracy": 0.9053468208092486,
+          "f1_macro": 0.9040624731061649
+        },
+        {
+          "subject": 4,
+          "session": 2,
+          "accuracy": 0.625,
+          "f1_macro": 0.514701123581644
+        },
+        {
+          "subject": 5,
+          "session": 1,
+          "accuracy": 0.7102601156069365,
+          "f1_macro": 0.6857894498944394
+        },
+        {
+          "subject": 5,
+          "session": 2,
+          "accuracy": 0.8034682080924855,
+          "f1_macro": 0.7978156554505578
+        },
+        {
+          "subject": 6,
+          "session": 1,
+          "accuracy": 0.8807803468208093,
+          "f1_macro": 0.8703446127162041
+        },
+        {
+          "subject": 6,
+          "session": 2,
+          "accuracy": 0.5115606936416185,
+          "f1_macro": 0.4205027570462958
+        },
+        {
+          "subject": 7,
+          "session": 1,
+          "accuracy": 0.7976878612716763,
+          "f1_macro": 0.7902072181153991
+        },
+        {
+          "subject": 7,
+          "session": 2,
+          "accuracy": 1.0,
+          "f1_macro": 1.0
+        },
+        {
+          "subject": 8,
+          "session": 1,
+          "accuracy": 0.5606936416184971,
+          "f1_macro": 0.47718696397941684
+        },
+        {
+          "subject": 8,
+          "session": 2,
+          "accuracy": 0.8952312138728323,
+          "f1_macro": 0.8877780791858374
+        },
+        {
+          "subject": 9,
+          "session": 1,
+          "accuracy": 0.8901734104046243,
+          "f1_macro": 0.8904463987163718
+        },
+        {
+          "subject": 9,
+          "session": 2,
+          "accuracy": 0.8316473988439307,
+          "f1_macro": 0.8145745529113557
+        },
+        {
+          "subject": 10,
+          "session": 1,
+          "accuracy": 0.6734104046242775,
+          "f1_macro": 0.676321462528359
+        },
+        {
+          "subject": 10,
+          "session": 2,
+          "accuracy": 0.736271676300578,
+          "f1_macro": 0.7426275726949333
+        },
+        {
+          "subject": 11,
+          "session": 1,
+          "accuracy": 0.8309248554913294,
+          "f1_macro": 0.8267250469681486
+        },
+        {
+          "subject": 11,
+          "session": 2,
+          "accuracy": 0.8063583815028902,
+          "f1_macro": 0.8117164906907255
+        },
+        {
+          "subject": 12,
+          "session": 1,
+          "accuracy": 0.7803468208092486,
+          "f1_macro": 0.767523383457914
+        },
+        {
+          "subject": 12,
+          "session": 2,
+          "accuracy": 0.40390173410404623,
+          "f1_macro": 0.3228721989360694
+        },
+        {
+          "subject": 13,
+          "session": 1,
+          "accuracy": 0.8771676300578035,
+          "f1_macro": 0.880741379082512
+        },
+        {
+          "subject": 13,
+          "session": 2,
+          "accuracy": 0.8352601156069365,
+          "f1_macro": 0.8214514628346944
+        },
+        {
+          "subject": 14,
+          "session": 1,
+          "accuracy": 0.8164739884393064,
+          "f1_macro": 0.810318240427244
+        },
+        {
+          "subject": 14,
+          "session": 2,
+          "accuracy": 0.8229768786127167,
+          "f1_macro": 0.8112527036123343
+        },
+        {
+          "subject": 15,
+          "session": 1,
+          "accuracy": 1.0,
+          "f1_macro": 1.0
+        },
+        {
+          "subject": 15,
+          "session": 2,
+          "accuracy": 0.8302023121387283,
+          "f1_macro": 0.8185085354896676
+        }
+      ]
+    },
+    "LinearSVC": {
+      "accuracy": 0.7771194605009634,
+      "accuracy_std_sesiones": 0.14327674964577922,
+      "f1_macro": 0.7587658103526462,
+      "f1_macro_std_sesiones": 0.1645352202895556,
+      "confusion_matrix": [
+        [
+          8441,
+          3176,
+          1553
+        ],
+        [
+          2340,
+          10711,
+          1049
+        ],
+        [
+          670,
+          466,
+          13114
+        ]
+      ],
+      "n_test": 41520,
+      "por_sesion": [
+        {
+          "subject": 1,
+          "session": 1,
+          "accuracy": 0.8497109826589595,
+          "f1_macro": 0.8361225232721411
+        },
+        {
+          "subject": 1,
+          "session": 2,
+          "accuracy": 0.740606936416185,
+          "f1_macro": 0.7236920511960969
+        },
+        {
+          "subject": 2,
+          "session": 1,
+          "accuracy": 0.5722543352601156,
+          "f1_macro": 0.5493945554257146
+        },
+        {
+          "subject": 2,
+          "session": 2,
+          "accuracy": 0.9335260115606936,
+          "f1_macro": 0.9322602280348758
+        },
+        {
+          "subject": 3,
+          "session": 1,
+          "accuracy": 0.819364161849711,
+          "f1_macro": 0.8197684216155103
+        },
+        {
+          "subject": 3,
+          "session": 2,
+          "accuracy": 0.7651734104046243,
+          "f1_macro": 0.7501472111525662
+        },
+        {
+          "subject": 4,
+          "session": 1,
+          "accuracy": 0.9234104046242775,
+          "f1_macro": 0.9219516765488329
+        },
+        {
+          "subject": 4,
+          "session": 2,
+          "accuracy": 0.6524566473988439,
+          "f1_macro": 0.5488164195859316
+        },
+        {
+          "subject": 5,
+          "session": 1,
+          "accuracy": 0.6567919075144508,
+          "f1_macro": 0.6346249872809976
+        },
+        {
+          "subject": 5,
+          "session": 2,
+          "accuracy": 0.8106936416184971,
+          "f1_macro": 0.8021883320607838
+        },
+        {
+          "subject": 6,
+          "session": 1,
+          "accuracy": 0.7702312138728323,
+          "f1_macro": 0.7153403613929931
+        },
+        {
+          "subject": 6,
+          "session": 2,
+          "accuracy": 0.47398843930635837,
+          "f1_macro": 0.3988440979149797
+        },
+        {
+          "subject": 7,
+          "session": 1,
+          "accuracy": 0.819364161849711,
+          "f1_macro": 0.8158712484918295
+        },
+        {
+          "subject": 7,
+          "session": 2,
+          "accuracy": 1.0,
+          "f1_macro": 1.0
+        },
+        {
+          "subject": 8,
+          "session": 1,
+          "accuracy": 0.684971098265896,
+          "f1_macro": 0.6636021508584594
+        },
+        {
+          "subject": 8,
+          "session": 2,
+          "accuracy": 0.8692196531791907,
+          "f1_macro": 0.8552688248736047
+        },
+        {
+          "subject": 9,
+          "session": 1,
+          "accuracy": 0.976878612716763,
+          "f1_macro": 0.9766589256785335
+        },
+        {
+          "subject": 9,
+          "session": 2,
+          "accuracy": 0.6748554913294798,
+          "f1_macro": 0.6533084160966761
+        },
+        {
+          "subject": 10,
+          "session": 1,
+          "accuracy": 0.7239884393063584,
+          "f1_macro": 0.7063358979149174
+        },
+        {
+          "subject": 10,
+          "session": 2,
+          "accuracy": 0.7210982658959537,
+          "f1_macro": 0.7214499265433051
+        },
+        {
+          "subject": 11,
+          "session": 1,
+          "accuracy": 0.9458092485549133,
+          "f1_macro": 0.9464441330911902
+        },
+        {
+          "subject": 11,
+          "session": 2,
+          "accuracy": 0.7283236994219653,
+          "f1_macro": 0.7347634787380987
+        },
+        {
+          "subject": 12,
+          "session": 1,
+          "accuracy": 0.7680635838150289,
+          "f1_macro": 0.760581937354277
+        },
+        {
+          "subject": 12,
+          "session": 2,
+          "accuracy": 0.3706647398843931,
+          "f1_macro": 0.26978371008422536
+        },
+        {
+          "subject": 13,
+          "session": 1,
+          "accuracy": 0.9205202312138728,
+          "f1_macro": 0.9173363095238095
+        },
+        {
+          "subject": 13,
+          "session": 2,
+          "accuracy": 0.7348265895953757,
+          "f1_macro": 0.7252196431594021
+        },
+        {
+          "subject": 14,
+          "session": 1,
+          "accuracy": 0.8294797687861272,
+          "f1_macro": 0.830521945961617
+        },
+        {
+          "subject": 14,
+          "session": 2,
+          "accuracy": 0.773121387283237,
+          "f1_macro": 0.7702550396084805
+        },
+        {
+          "subject": 15,
+          "session": 1,
+          "accuracy": 1.0,
+          "f1_macro": 1.0
+        },
+        {
+          "subject": 15,
+          "session": 2,
+          "accuracy": 0.8041907514450867,
+          "f1_macro": 0.782421857119541
+        }
+      ]
+    }
+  }
+}

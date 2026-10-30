@@ -3,8 +3,10 @@ Agrega los resultados de varias semillas: media ± desviacion por experimento
 y numero de canales.
 
 Lee results/<experimento>/<canales>_seed<N>/metrics.json y escribe
-results/summary.csv con una fila por (experimento, canales). La desviacion es
-la poblacional (np.std, ddof=0), igual que en el resto de scripts.
+results/summary.csv con una fila por (experimento, modelo, canales). Si un
+metrics.json trae varios modelos (metrics["modelos"], p.ej. ANN y SVM en el
+experimento 01), cada uno da su propia fila. La desviacion es la poblacional
+(np.std, ddof=0), igual que en el resto de scripts.
 
 Uso:
   python scripts/aggregate_seeds.py
@@ -24,7 +26,7 @@ import numpy as np
 from eeg_emotion import config as cfg
 
 RUN_RE = re.compile(r"^(?P<channels>.+)_seed(?P<seed>-?\d+)$")
-FIELDS = ["experimento", "canales", "n_semillas", "semillas",
+FIELDS = ["experimento", "modelo", "canales", "n_semillas", "semillas",
           "accuracy_media", "accuracy_std", "f1_macro_media", "f1_macro_std",
           "accuracy", "f1_macro"]
 
@@ -39,9 +41,22 @@ def parse_args():
     return p.parse_args()
 
 
+def run_models(path, metrics):
+    """{modelo: metricas} de un run: metrics["modelos"] si existe; si no, las
+    metricas de primer nivel con el nombre del modelo de config.json."""
+    if "modelos" in metrics:
+        return metrics["modelos"]
+    model = ""
+    config_path = os.path.join(os.path.dirname(path), "config.json")
+    if os.path.exists(config_path):
+        with open(config_path, encoding="utf-8") as f:
+            model = json.load(f).get("model", "")
+    return {model: metrics}
+
+
 def main():
     args = parse_args()
-    groups = defaultdict(list)          # (experimento, canales) -> [(seed, metrics)]
+    groups = defaultdict(list)          # (experimento, modelo, canales) -> [(seed, metrics)]
     for path in sorted(glob.glob(os.path.join(args.results, "*", "*", "metrics.json"))):
         run = os.path.basename(os.path.dirname(path))
         exp = os.path.basename(os.path.dirname(os.path.dirname(path)))
@@ -50,17 +65,17 @@ def main():
             continue
         with open(path, encoding="utf-8") as f:
             metrics = json.load(f)
-        if "accuracy" not in metrics or "f1_macro" not in metrics:
-            continue
-        groups[(exp, m["channels"])].append((int(m["seed"]), metrics))
+        for model, mm in run_models(path, metrics).items():
+            if "accuracy" in mm and "f1_macro" in mm:
+                groups[(exp, model, m["channels"])].append((int(m["seed"]), mm))
 
     rows = []
-    for (exp, ch), runs in sorted(groups.items()):
+    for (exp, model, ch), runs in sorted(groups.items()):
         runs.sort()
         acc = np.array([r["accuracy"] for _, r in runs])
         f1 = np.array([r["f1_macro"] for _, r in runs])
         rows.append({
-            "experimento": exp, "canales": ch, "n_semillas": len(runs),
+            "experimento": exp, "modelo": model, "canales": ch, "n_semillas": len(runs),
             "semillas": " ".join(str(s) for s, _ in runs),
             "accuracy_media": round(float(acc.mean()), 4),
             "accuracy_std": round(float(acc.std()), 4),
@@ -76,9 +91,10 @@ def main():
         w.writeheader()
         w.writerows(rows)
 
-    print(f"{'experimento':32s} {'canales':8s} {'n':>2}  {'accuracy':>17}  {'f1_macro':>17}")
+    print(f"{'experimento':22s} {'modelo':11s} {'canales':9s} {'n':>2}  "
+          f"{'accuracy':>17}  {'f1_macro':>17}")
     for r in rows:
-        print(f"{r['experimento']:32s} {r['canales']:8s} {r['n_semillas']:2d}  "
+        print(f"{r['experimento']:22s} {r['modelo']:11s} {r['canales']:9s} {r['n_semillas']:2d}  "
               f"{r['accuracy']:>17}  {r['f1_macro']:>17}")
     print(f"\nGuardado en {out}")
 

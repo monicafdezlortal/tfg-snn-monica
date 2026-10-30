@@ -1,0 +1,62 @@
+{
+  "experiment": "01_zheng_lu_ann_svm",
+  "models": [
+    "EmotionANN",
+    "LinearSVC"
+  ],
+  "channels": 62,
+  "sessions_per_subject": 2,
+  "n_experiments": 30,
+  "seed": 0,
+  "feature_key": "de_LDS",
+  "train_trials": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9
+  ],
+  "test_trials": [
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+  ],
+  "normalization": "z-score con estadisticas del train de cada sesion",
+  "ann": {
+    "hidden": 128,
+    "epochs": 50,
+    "batch_size": 256,
+    "lr": 0.001,
+    "weight_decay": 0.0001,
+    "dropout": 0.3,
+    "class_weights": false,
+    "drop_last": true,
+    "n_params": 48643
+  },
+  "svm": {
+    "C_grid": [
+      0.0009765625,
+      0.00390625,
+      0.015625,
+      0.0625,
+      0.25,
+      1.0,
+      4.0,
+      16.0,
+      64.0,
+      256.0,
+      1024.0
+    ],
+    "cv": "GroupKFold(3) por trial",
+    "max_iter": 20000
+  },
+  "device": "cpu",
+  "torch_threads": 3
+}

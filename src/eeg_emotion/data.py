@@ -42,8 +42,21 @@ def channel_columns(indices=cfg.CHANNEL_INDICES):
     return [c * cfg.N_BANDS + b for c in indices for b in range(cfg.N_BANDS)]
 
 
+def zheng_sessions(n_sessions=2, data_dir=cfg.DATA_DIR):
+    """[(sujeto, n_sesion, ruta)] con los sujetos en orden numerico y, dentro
+    de cada sujeto, sus primeras n_sessions sesiones por fecha. Zheng & Lu
+    2015 usan 2 sesiones por sujeto (30 experimentos); el SEED publico trae 3."""
+    by_subj = {}
+    for fp in session_files(data_dir):
+        subj, date = os.path.splitext(os.path.basename(fp))[0].split("_")
+        by_subj.setdefault(int(subj), []).append((date, fp))
+    return [(subj, k, fp)
+            for subj in sorted(by_subj)
+            for k, (_, fp) in enumerate(sorted(by_subj[subj])[:n_sessions], start=1)]
+
+
 def load_seed(feature_keys=(cfg.FEATURE_KEY,), channels=4, data_dir=cfg.DATA_DIR,
-              order="file"):
+              order="file", files=None):
     """
     Lee las features de todas las sesiones de SEED.
 
@@ -58,6 +71,8 @@ def load_seed(feature_keys=(cfg.FEATURE_KEY,), channels=4, data_dir=cfg.DATA_DIR
     order="file"    : orden alfabetico de ficheros (10_, 11_, ..., 1_, 2_...)
     order="subject" : sujetos 1..15 en orden numerico (orden del antiguo
                       data/seed_snn_dataset.npz, que usaba la SNN)
+    files : lista de ficheros a leer (por defecto todas las sesiones de
+            data_dir); p.ej. [ruta] para una sola sesion
     """
     feature_keys = list(feature_keys)
     idx = channel_indices(channels)
@@ -67,7 +82,7 @@ def load_seed(feature_keys=(cfg.FEATURE_KEY,), channels=4, data_dir=cfg.DATA_DIR
     cols = {k: [] for k in ("y", "subject", "session", "trial", "trial_id")}
     sessions_seen = {}
     tid = 0
-    for fp in session_files(data_dir):
+    for fp in (session_files(data_dir) if files is None else files):
         name = os.path.basename(fp)
         subj_id = int(name.split("_")[0])                   # "1_20131027.mat" -> 1
         sessions_seen[subj_id] = sessions_seen.get(subj_id, 0) + 1
@@ -104,9 +119,9 @@ def load_seed(feature_keys=(cfg.FEATURE_KEY,), channels=4, data_dir=cfg.DATA_DIR
 
 
 def load_seed_features(channels=4, feature_key=cfg.FEATURE_KEY, data_dir=cfg.DATA_DIR,
-                       order="file"):
+                       order="file", files=None):
     """Atajo para una sola feature: devuelve (X (N, C*5) float64, meta)."""
-    feats, meta = load_seed((feature_key,), channels, data_dir, order)
+    feats, meta = load_seed((feature_key,), channels, data_dir, order, files)
     return feats[feature_key], meta
 
 
@@ -129,6 +144,15 @@ def zscore_per_subject(X, subject):
 def normalize_per_subject(X, subject):
     """z-score por sujeto en float32 (entrada de la ANN)."""
     return zscore_per_subject(X, subject).astype(np.float32)
+
+
+def zscore_train_test(X_train, X_test):
+    """z-score con las estadisticas SOLO del train (protocolo por sesion de
+    Zheng & Lu: el test no se usa para normalizar)."""
+    mu = X_train.mean(axis=0, keepdims=True)
+    sd = X_train.std(axis=0, keepdims=True)
+    sd = np.where(sd < 1e-8, 1.0, sd)
+    return (X_train - mu) / sd, (X_test - mu) / sd
 
 
 def to_spike_rate(Z, clip=4):
