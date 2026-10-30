@@ -17,3 +17,4 @@ ExtractedFeatures_1s/
 
 # Configuracion local de herramientas
 .claude/
+.vscode/

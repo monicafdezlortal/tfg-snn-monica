@@ -40,9 +40,12 @@ tfg-eeg-emotion/
 │   └── aggregate_seeds.py   # media ± desviación de varias semillas -> results/summary.csv
 ├── legacy/                  # rutas históricas tal cual estaban (ver legacy/README.md)
 ├── akida/                   # despliegue en AKD1000 (vacía por ahora)
-├── results/<experimento>/<canales>_seed<N>/   # config.json, metrics.json,
-│                                              # confusion_matrix.csv, model.pth
-├── notebooks/               # exploración (notebooks y scripts explorar_*.py)
+├── results/
+│   ├── <experimento>/<canales>_seed<N>/   # config.json, metrics.json,
+│   │                                      # confusion_matrix.csv, model.pth
+│   ├── summary.csv          # tabla agregada (scripts/aggregate_seeds.py)
+│   └── legacy/              # resultados de las rutas de legacy/
+├── notebooks/               # exploración (ver notebooks/README.md)
 └── docs/figures/            # figuras para la memoria
 ```
 
