@@ -24,3 +24,6 @@ ExtractedFeatures_1s/
 # Configuracion local de herramientas
 .claude/
 .vscode/
+
+# Logs de las ejecuciones en paralelo del experimento 05 (scripts/run_05_seeds.sh)
+results/*/logs/
