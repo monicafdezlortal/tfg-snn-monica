@@ -12,3 +12,5 @@ experimento,modelo,canales,n_semillas,semillas,accuracy_media,accuracy_std,f1_ma
 05b_akida_int_input,MLP32_int4in,4ch_uniforme3,5,0 1 2 3 4,0.6123,0.0186,0.6029,0.0176,0.6123 ± 0.0186,0.6029 ± 0.0176
 05b_akida_int_input,MLP32_int4in,62ch_cuantiles,5,0 1 2 3 4,0.6758,0.0087,0.6751,0.009,0.6758 ± 0.0087,0.6751 ± 0.0090
 05b_akida_int_input,MLP32_int4in,62ch_uniforme3,5,0 1 2 3 4,0.682,0.0215,0.6807,0.0222,0.6820 ± 0.0215,0.6807 ± 0.0222
+05c_akida_qat,MLP32_QAT4,4ch_cuantiles,5,0 1 2 3 4,0.6041,0.0134,0.5973,0.0141,0.6041 ± 0.0134,0.5973 ± 0.0141
+05c_akida_qat,MLP32_QAT4,62ch_uniforme3,5,0 1 2 3 4,0.6736,0.022,0.6724,0.0224,0.6736 ± 0.0220,0.6724 ± 0.0224

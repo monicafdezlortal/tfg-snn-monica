@@ -249,6 +249,14 @@ def train(model, train, val, epochs, batch_size, patience=None):
     return cb
 
 
+def load_keras(path):
+    """Carga un .keras (float o cuantizado). Importar quantizeml.layers registra
+    sus capas en Keras; quantizeml.load_model solo acepta .h5/.onnx. Es como lo
+    carga Alvaro en su notebook (keras.models.load_model, compile=False)."""
+    import quantizeml.layers  # noqa: F401
+    return keras.models.load_model(str(path), compile=False)
+
+
 def predict_logits(model, X):
     return np.asarray(model.predict(X, batch_size=4096, verbose=0)).reshape(len(X), -1)
 
