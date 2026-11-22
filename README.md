@@ -15,21 +15,26 @@ Trabajo Fin de Grado de Mónica Fernández. Dataset: SEED (features `de_LDS`, ve
 | 02 | ANN cross-subject (test 1-3, val 4-5, train 6-15), z-score por sujeto | ✅ Hecho (5 semillas, 4 y 62 canales) |
 | 03 | SNN cross-subject con el mismo split | ✅ Hecho (4 canales) · ⏳ 62 canales pendiente (a decidir con el tutor) |
 | 04 | Búsqueda de hiperparámetros (ANN, SNN) y de features de entrada (ANN) | ✅ Hecho |
-| 05+ | Despliegue de la ANN en BrainChip AKD1000 | ⏳ Pendiente (carpeta `akida/` preparada) |
+| 05a-05d | ANN para Akida: Keras float → entrada de 4 bits → QuantizeML + QAT → Akida v1 (`.fbz`) en el simulador | ✅ Hecho (5 semillas, 4 y 62 canales) |
+| 05e | Latencia, potencia y energía en la placa AKD1000 (9 modos de reloj y mapeo) | ⏳ Script preparado; pendiente de ejecutar en el laboratorio |
 
 ## 2. Estructura del repositorio
 
 ```
 tfg-snn-monica/
 ├── README.md
-├── requirements.txt         # versiones con las que se obtuvieron los resultados
+├── requirements.txt         # versiones con las que se obtuvieron los resultados (01-04)
+├── requirements-akida.txt   # entorno .venv-akida del experimento 05 (Python 3.11)
 ├── pyproject.toml           # permite "pip install -e ." del paquete eeg_emotion
-├── data/                    # SEED (no se sube a git)
+├── data/                    # SEED (no se sube a git); data/cache/: features en .npz para 05
 ├── src/eeg_emotion/
 │   ├── config.py            # rutas, índices de canales, sujetos de cada split
-│   ├── data.py              # carga de SEED, canales, normalización, splits, rate coding
+│   ├── data.py              # carga de SEED, canales, normalización, splits (sin torch)
+│   ├── spikes.py            # rate coding de la SNN (SpikeDataset, spike_collate)
 │   ├── models.py            # EmotionANN, FlexANN, EmotionSNN, FlexSNN
-│   └── training.py          # bucle de entrenamiento, evaluate, métricas, semillas
+│   ├── training.py          # bucle de entrenamiento, evaluate, semillas
+│   ├── results.py           # métricas y guardado de resultados (sin torch)
+│   └── akida_tools.py       # experimento 05: red Keras, entrada de 4 bits, QAT, Akida
 ├── scripts/                 # un script por experimento
 │   ├── 01_zheng_lu_ann_svm.py
 │   ├── 02_ann_cross_subject.py
@@ -37,12 +42,16 @@ tfg-snn-monica/
 │   ├── 04a_ann_hparam_search.py
 │   ├── 04b_snn_hparam_search.py
 │   ├── 04c_ann_feature_experiments.py
+│   ├── 05a_akida_float.py ... 05e_akida_hardware.py   # despliegue en Akida (ver 5)
+│   ├── 05b_select_input_quant.py   # elige la entrada de 4 bits por val_acc
+│   ├── run_05_seeds.sh      # lanza una etapa de 05 con las 5 semillas en paralelo
 │   └── aggregate_seeds.py   # media ± desviación de varias semillas -> results/summary.csv
 ├── legacy/                  # rutas históricas tal cual estaban (ver legacy/README.md)
-├── akida/                   # despliegue en AKD1000 (vacía por ahora)
+├── akida/                   # cómo medir en la placa AKD1000 (experimento 05e)
 ├── results/
 │   ├── <experimento>/<canales>_seed<N>/   # config.json, metrics.json,
 │   │                                      # confusion_matrix.csv, model.pth
+│   │                                      # (05: model.keras / model.fbz)
 │   ├── summary.csv          # tabla agregada (scripts/aggregate_seeds.py)
 │   └── legacy/              # resultados de las rutas de legacy/
 ├── notebooks/               # exploración (ver notebooks/README.md)
@@ -73,6 +82,16 @@ pip install -e .                  # instala src/eeg_emotion en modo editable
 
 Los comandos se ejecutan desde la raíz del repositorio.
 
+**Entorno del experimento 05 (Akida).** El SDK de BrainChip necesita Python 3.11, así que va en un entorno aparte, `.venv-akida`, sin torch:
+
+```bash
+py -3.11 -m venv .venv-akida      # Linux: python3.11 -m venv .venv-akida
+.venv-akida\Scripts\python -m pip install -r requirements-akida.txt
+.venv-akida\Scripts\python -m pip install -e . --no-deps
+```
+
+Las versiones del SDK son las de [akida-model-deployment-pipeline](https://github.com/AlvaroPRuiiz/akida-model-deployment-pipeline): akida y cnn2snn 2.19.1, quantizeml 1.2.3, tensorflow 2.19.1 y tf_keras 2.19.0. La única diferencia es numpy: akd1000-bringup fija 2.4.6, pero tensorflow 2.19.1 exige numpy < 2.2, así que se usa 2.1.3. Con este entorno, la prueba de humo del simulador de akd1000-bringup (`examples/00_simulator_smoke.py`) da `[5, 5]`.
+
 ## 4. Datos
 
 1. Solicita SEED al BCMI Lab (SJTU) en <https://bcmi.sjtu.edu.cn/home/seed/>. Hay que firmar un acuerdo de licencia, así que **el dataset no se distribuye con este repositorio**.
@@ -97,7 +116,12 @@ Cada `.mat` tiene, para cada trial t = 1..15, la clave `de_LDS<t>` con forma `(6
 | 04a | `python scripts/04a_ann_hparam_search.py` | 3.x Selección de hiperparámetros (provisional) |
 | 04b | `python scripts/04b_snn_hparam_search.py` | 3.x Selección de hiperparámetros (provisional) |
 | 04c | `python scripts/04c_ann_feature_experiments.py` | 3.x Selección de hiperparámetros (provisional) |
-| Tabla | `python scripts/aggregate_seeds.py` | Tablas de resultados de 4.1-4.4 |
+| 05a | `.venv-akida\Scripts\python scripts/05a_akida_float.py --channels 4 --seed 0` | 4.5 Despliegue en Akida |
+| 05b | `... scripts/05b_akida_int_input.py --channels 4 --seed 0 --input-quant uniforme3` (y `cuantiles`); después `scripts/05b_select_input_quant.py` | 4.5 |
+| 05c | `... scripts/05c_akida_qat.py --channels 4 --seed 0` (usa la entrada elegida en 05b) | 4.5 |
+| 05d | `... scripts/05d_akida_sim.py --channels 4 --seed 0` | 4.5 |
+| 05e | En la Raspberry Pi con la placa: `sudo -E .venv/bin/python scripts/05e_akida_hardware.py --run-dir results/05d_akida_sim/4ch_cuantiles_seed0` (ver [akida/README.md](akida/README.md)) | 4.6 Medidas en AKD1000 |
+| Tabla | `python scripts/aggregate_seeds.py` | Tablas de resultados de 4.1-4.5 |
 
 Para varias semillas y los dos conjuntos de canales (01, 02 y 03):
 
@@ -108,7 +132,21 @@ done; done
 python scripts/aggregate_seeds.py
 ```
 
-- **Pruebas rápidas.** `--epochs 2` en 01/02/03, y `--trials 1 --max-epochs 1` en las búsquedas.
+Para el experimento 05, cada etapa con las 5 semillas y los dos conjuntos de canales (en Git Bash, una etapa detrás de otra porque cada una parte de la anterior):
+
+```bash
+bash scripts/run_05_seeds.sh 05a_akida_float
+bash scripts/run_05_seeds.sh 05b_akida_int_input --input-quant uniforme3
+bash scripts/run_05_seeds.sh 05b_akida_int_input --input-quant cuantiles
+.venv-akida/Scripts/python scripts/05b_select_input_quant.py
+bash scripts/run_05_seeds.sh 05c_akida_qat
+bash scripts/run_05_seeds.sh 05d_akida_sim
+python scripts/aggregate_seeds.py
+```
+
+`run_05_seeds.sh` usa 1 hilo de TensorFlow por proceso. Con 62 canales cada proceso necesita ~1 GB de RAM: con poca memoria libre, `CHANNELS="62" MAXJOBS=2 bash scripts/run_05_seeds.sh ...`.
+
+- **Pruebas rápidas.** `--epochs 2` en 01/02/03, 05a, 05b y 05c, y `--trials 1 --max-epochs 1` en las búsquedas.
 - **Reanudar.** Las búsquedas (04a/04b/04c) se reanudan solas desde su CSV si se interrumpen.
 - **Duración.** El experimento 01 tarda unos 5 min por semilla (4 canales) y unos 6 min (62 canales). La SNN tarda unos 2 min por epoch con 4 canales en CPU, así que 50 epochs llevan más de 1.5 h por semilla. Las 5 semillas de la tabla se ejecutaron en paralelo con `OMP_NUM_THREADS=3`. El número de hilos queda en `config.json` porque en CPU puede afectar a los últimos decimales. Conviene **desactivar la suspensión del equipo** durante las ejecuciones largas: si se suspende, la columna `seconds` de los CSV incluye el tiempo suspendido.
 
@@ -156,6 +194,36 @@ Configuración elegida por validación (nunca por test) y evaluada en test una s
 
 Al pasar del protocolo por sesión (01, ~78 %) al cross-subject (02, 62-65 %), la ANN pierde unos 15 puntos: generalizar a personas nuevas es mucho más difícil que a trials nuevos de la misma persona. Con 4 canales, la SNN pierde unos 2.1 puntos respecto a la ANN equivalente (0.603 frente a 0.624). Con la misma red, pasar de 4 a 62 canales mejora la ANN en unos 2.7 puntos. En las búsquedas, la mejor ANN de 62 canales llega a ~0.70. En 04c, añadir features de asimetría mejora la validación pero no el test.
 
+**Despliegue en Akida (experimento 05, 5 semillas: 0-4)**
+
+Mismo split cross-subject que 02 (test sujetos 1-3). Cada etapa parte de la anterior con la misma semilla.
+
+> **05a no es la red de 02 pasada a Keras.** Cambia la arquitectura: 1 capa oculta de 32 (02: 128 → 64), sin bias, sin BatchNorm, ReLU acotada a 15, dropout 0.35 (02: 0.3), lr 3.3e-4 y batch 512 (02: 1e-3 y 256), sin weight decay ni ReduceLROnPlateau. Es la mejor configuración de 04a adaptada a lo que admite Akida v1. La diferencia entre 02 y 05a, por tanto, no se debe solo a pasar de PyTorch a Keras.
+
+| Etapa | Qué cambia | Canales | Entrada | Accuracy | F1 macro | Coincide con la etapa anterior |
+|---|---|---|---|---|---|---|
+| 02 (referencia) | PyTorch, `EmotionANN` 128 → 64, con BN y bias | 4 | float | 0.6236 ± 0.0072 | 0.6223 ± 0.0065 | |
+| 05a | Keras, Dense(32) sin bias, sin BN | 4 | float (z-score) | 0.6228 ± 0.0103 | 0.6214 ± 0.0106 | |
+| 05b | Entrada cuantizada a 0..15 | 4 | cuantiles (elegida por val) | 0.6079 ± 0.0111 | 0.5990 ± 0.0130 | |
+| 05b (variante) | | 4 | ±3σ uniforme | 0.6123 ± 0.0186 | 0.6029 ± 0.0176 | |
+| 05c | QuantizeML 4 bits + QAT | 4 | cuantiles | 0.6041 ± 0.0134 | 0.5973 ± 0.0141 | 89.8 % con 05b |
+| 05d | Akida v1 (`.fbz`) en el simulador | 4 | cuantiles | **0.6037 ± 0.0135** | 0.5967 ± 0.0144 | 99.1 % con 05c |
+| 02 (referencia) | PyTorch, `EmotionANN` 128 → 64, con BN y bias | 62 | float | 0.6508 ± 0.0081 | 0.6514 ± 0.0077 | |
+| 05a | Keras, Dense(32) sin bias, sin BN | 62 | float (z-score) | 0.6900 ± 0.0149 | 0.6899 ± 0.0149 | |
+| 05b | Entrada cuantizada a 0..15 | 62 | ±3σ uniforme (elegida por val) | 0.6820 ± 0.0215 | 0.6807 ± 0.0222 | |
+| 05b (variante) | | 62 | cuantiles | 0.6758 ± 0.0087 | 0.6751 ± 0.0090 | |
+| 05c | QuantizeML 4 bits + QAT | 62 | ±3σ uniforme | 0.6736 ± 0.0220 | 0.6724 ± 0.0224 | 92.6 % con 05b |
+| 05d | Akida v1 (`.fbz`) en el simulador | 62 | ±3σ uniforme | **0.6736 ± 0.0220** | 0.6724 ± 0.0224 | 99.7 % con 05c |
+
+- **De la red float al simulador de Akida se pierden 1.9 puntos con 4 canales (0.623 → 0.604) y 1.6 con 62 (0.690 → 0.674).**
+  - Con 4 canales, casi todo (1.5 puntos) se pierde al cuantizar la entrada a 4 bits (05b).
+  - Con 62, la pérdida se reparte entre la entrada (0.8) y la QAT de pesos y activaciones (0.8).
+  - La conversión a Akida no cuesta prácticamente nada.
+- **El simulador coincide con el modelo QAT en el 99.1 % (4 canales) y el 99.7 % (62) de las predicciones.** Álvaro obtuvo un 94.6 % con su modelo 8-957-180.
+- **Recorte de la entrada a ±3σ.** Afecta al 0.26/0.63/0.73 % de los valores (train/val/test) con 4 canales y al 0.38/0.55/0.64 % con 62. Con ±3σ, los niveles extremos casi no se usan (unos 3.4 bits efectivos de 4). La variante por cuantiles usa los 16 niveles por igual. La validación elige cuantiles con 4 canales y ±3σ con 62. En test las dos variantes quedan a menos de 1 punto: con 4 canales la no elegida (±3σ) sale 0.4 puntos mejor, y con 62 la elegida es también la mejor.
+- **El modelo Akida es `InputData → FullyConnected → FullyConnected`** (el dropout desaparece al convertir). El `.fbz` ocupa 2.6 KB con 4 canales y 13.4 KB con 62, y cabe entero en un AKD1000 virtual.
+- **Ninguna etapa pierde más de 5 puntos respecto a la anterior**, así que no ha hecho falta el plan B (añadir una entrada constante como bias, opción `--const-input` de 05b).
+
 ## 7. Decisiones metodológicas clave
 
 - **Evaluación cross-subject (sujetos de test 1-3 no vistos; validación con sujetos 4-5).**
@@ -184,6 +252,18 @@ Al pasar del protocolo por sesión (01, ~78 %) al cross-subject (02, 62-65 %), l
   - Se usan 2 sesiones por sujeto, como en el paper (el SEED público trae 3; `--sessions 3` da 45 experimentos).
   - Sin validación: la ANN entrena 50 epochs fijas, y el test no se usa para elegir epoch. La normalización usa solo las estadísticas del train de cada sesión.
   - El C de la SVM lineal se elige en cada sesión, entre 2⁻¹⁶ y 2¹⁰ (potencias pares de 2), con validación cruzada `GroupKFold` de 3 folds agrupada por trial dentro del train, para que ventanas de un mismo trial no caigan a la vez en train y validación.
+- **Despliegue en Akida (05).**
+  - **Receta de Álvaro Poveda** (`run_small_matched_recipe.py`): Dense sin bias → ReLU(max 15) → Dense sin bias; entrada entera 0..15 (int8 en Keras y QuantizeML, uint8 en Akida).
+    - Cuantización: `QuantizationParams(input_dtype="int8", input_weight_bits=4, weight_bits=4, activation_bits=4, output_bits=8, per_tensor_activations=False)`.
+    - PTQ con 1024 muestras. QAT con Adam lr 1e-4, batch 128, hasta 30 epochs y paciencia 6.
+    - Conversión con `cnn2snn.convert` dentro de `set_akida_version(AkidaVersion.v1)`.
+  - **Tamaño de la red** (32 neuronas ocultas, dropout 0.35, lr y batch): la mejor configuración de 04a. QuantizeML y CNN2SNN aceptan la capa Dropout (QuantizeML la envuelve y CNN2SNN la quita al convertir), así que se mantiene.
+  - **Diferencias con Álvaro:**
+    - la mejor epoch se elige por val_acc también en QAT, como en el resto del TFG (él usaba val_loss);
+    - las 1024 muestras de calibración se eligen al azar del train, porque en SEED las primeras serían un único trial de un sujeto;
+    - se usan pesos de clase, como en 02.
+  - **La red float de 05b se entrena ya con la entrada entera** (como Álvaro), en vez de reutilizar los pesos de 05a.
+  - **Cuantización de la entrada:** el z-score por sujeto se pasa a 16 niveles. Dos métodos: recortar a ±3σ en niveles de 0.375σ, o 15 umbrales por feature en los cuantiles del train. Se elige uno por cada número de canales por la val_acc media (`results/05b_akida_int_input/seleccion.json`), nunca por test.
 
 **Referencias**
 
@@ -202,7 +282,9 @@ Al pasar del protocolo por sesión (01, ~78 %) al cross-subject (02, 62-65 %), l
   - Con la rejilla inicial de C (2⁻¹⁰ a 2¹⁰), el C elegido caía a menudo en el extremo inferior: en 10 de 30 sesiones con 4 canales y en 6 de 30 con 62. Por eso se amplió a 2⁻¹⁶ - 2¹⁰. Ahora solo 5 de 30 sesiones con 4 canales quedan en un extremo (2 en 2⁻¹⁶ y 3 en 2¹⁰) y ninguna con 62.
   - La ampliación no mejora la SVM: baja de 77.71 a 76.67 % con 4 canales y de 79.40 a 79.11 % con 62. La validación cruzada de 3 folds (3 trials por fold) es ruidosa y a veces elige un C muy pequeño que generaliza peor al test. La diferencia con el paper, por tanto, no se debe a la rejilla de C.
 - **La SNN se entrena y evalúa en software** (SpikingJelly, CPU). No se han medido latencia ni energía en hardware.
-- **El despliegue en AKD1000 exige convertir el modelo** de PyTorch a Keras/QuantizeML, cuantizarlo a 4 bits y cuantizar la entrada a enteros (uint8). Esto puede costar accuracy respecto a la ANN en float32.
+- **La ANN de Akida (05) solo se ha ejecutado en el simulador.** Falta medir accuracy, latencia, potencia y energía en el AKD1000 (05e, preparado). La latencia de 05e será la observada desde el host alrededor de `predict`, y la potencia es la que da la API de Akida, no la de todo el sistema.
+- **La cuantización de la entrada usa las estadísticas por sujeto** (z-score) del sujeto de test, igual que en 02. En el dispositivo haría falta una calibración previa del usuario.
+- **El entorno de Akida usa numpy 2.1.3 en lugar del 2.4.6 de akd1000-bringup**, por la restricción de tensorflow 2.19.1. La prueba de humo del simulador pasa igualmente.
 
 ## 9. Relación con los repositorios de Álvaro Poveda
 
@@ -220,8 +302,8 @@ El despliegue en hardware (experimentos 05+) se apoya en dos repositorios de Ál
     4. Mapeo y medida en el chip.
   - Lo desarrolló para modelos de ángulo de llegada (AoA) con una entrada de 8 enteros.
 
-En este TFG se seguirá ese pipeline con la ANN de los experimentos 02/04 (un MLP pequeño, con 20 entradas en la versión de 4 canales). Hay tres diferencias respecto al caso AoA que habrá que resolver en `akida/`:
+En este TFG se sigue ese pipeline (experimento 05) con un MLP pequeño (20 entradas con 4 canales, 310 con 62). Las tres diferencias respecto al caso AoA se han resuelto así:
 
-1. **Framework.** El modelo está en PyTorch y hay que reimplementarlo en Keras (`tf_keras`).
-2. **Entrada.** Las features son continuas (z-score) y hay que cuantizarlas a enteros.
-3. **Entorno.** El pipeline usa Python 3.11 y el entorno de este repositorio usa 3.14, así que el despliegue necesitará un entorno virtual separado.
+1. **Framework.** El modelo se ha reimplementado en Keras (`tf_keras`), con la arquitectura que admite Akida v1 (`eeg_emotion/akida_tools.py`).
+2. **Entrada.** Las features continuas (z-score) se cuantizan a enteros 0..15 (05b).
+3. **Entorno.** Hay un entorno aparte, `.venv-akida`, con Python 3.11 y sin torch (`requirements-akida.txt`). La carga de datos de `eeg_emotion` ya no importa torch.
