@@ -3,8 +3,9 @@ __pycache__/
 *.egg-info/
 .ipynb_checkpoints/
 
-# Entornos virtuales
+# Entornos virtuales (.venv-akida: experimento 05, Python 3.11)
 .venv/
+.venv-akida/
 venv/
 
 # Datasets (demasiado grandes para el repo)
@@ -14,6 +15,11 @@ ExtractedFeatures_1s/
 
 # Pesos de modelos (se regeneran con los scripts)
 *.pth
+*.keras
+*.fbz
+
+# Entradas de test exportadas para la placa (datos de SEED: no se redistribuyen)
+*.npy
 
 # Configuracion local de herramientas
 .claude/

@@ -1,16 +1,26 @@
 """
 Carga de SEED (ExtractedFeatures_1s), seleccion de canales, normalizacion,
 splits y codificacion en spikes.
+
+No importa torch: SpikeDataset y spike_collate viven en eeg_emotion.spikes y
+se cargan solo cuando se piden (from eeg_emotion.data import SpikeDataset
+sigue funcionando). Asi este modulo se puede usar desde .venv-akida.
 """
 
 import os
 import glob
 import numpy as np
-import torch
 from scipy.io import loadmat
-from torch.utils.data import Dataset
 
 from . import config as cfg
+
+
+def __getattr__(name):
+    """Importa SpikeDataset y spike_collate (que necesitan torch) solo al usarlos."""
+    if name in ("SpikeDataset", "spike_collate"):
+        from . import spikes
+        return getattr(spikes, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 # ============================================================
@@ -196,35 +206,3 @@ def cv_fold_masks(subject, folds=cfg.CV_FOLDS):
 def describe_split(subject, masks, names=("Train", "Val  ", "Test ")):
     for name, mask in zip(names, masks):
         print(f"{name} sujetos : {sorted(np.unique(subject[mask]).tolist())}")
-
-
-# ============================================================
-# CODIFICACION EN SPIKES (SNN)
-# ============================================================
-class SpikeDataset(Dataset):
-    """
-    Genera spikes por rate coding en cada __getitem__ (no en disco).
-    Esto actua como data augmentation estocastica en cada epoch.
-    """
-    def __init__(self, X_norm, y, T):
-        self.X = torch.tensor(X_norm, dtype=torch.float32)  # (N, F)
-        self.y = torch.tensor(y,      dtype=torch.long)
-        self.T = T
-
-    def __len__(self):
-        return len(self.y)
-
-    def __getitem__(self, idx):
-        x = self.X[idx]                                      # (F,)
-        # Bernoulli: spike si random < probabilidad = valor normalizado
-        rand   = torch.rand(self.T, x.shape[0])             # (T, F)
-        spikes = (rand < x.unsqueeze(0)).float()             # (T, F)
-        return spikes, self.y[idx]
-
-
-def spike_collate(batch):
-    """Convierte lista de (T,F) y labels en tensores (T,B,F) y (B,)."""
-    spikes, labels = zip(*batch)
-    spikes = torch.stack(spikes, dim=1)   # (T, B, F)
-    labels = torch.stack(labels, dim=0)   # (B,)
-    return spikes, labels

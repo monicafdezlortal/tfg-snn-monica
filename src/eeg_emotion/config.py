@@ -4,8 +4,6 @@ Constantes compartidas por todos los experimentos: rutas, canales y splits.
 
 from pathlib import Path
 
-import torch
-
 # ============================================================
 # RUTAS
 # ============================================================
@@ -48,4 +46,9 @@ ZHENG_TEST_TRIALS  = list(range(10, 16))    # trials 10-15
 # ============================================================
 # HARDWARE
 # ============================================================
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+# torch es opcional: el experimento 05 (.venv-akida) usa este modulo sin torch
+try:
+    import torch
+    DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+except ImportError:
+    DEVICE = "cpu"
