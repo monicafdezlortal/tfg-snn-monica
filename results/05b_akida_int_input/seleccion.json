@@ -1,0 +1,63 @@
+{
+  "criterio": "val_acc media entre semillas (sujetos 4-5); el test no se usa",
+  "canales": {
+    "4ch": {
+      "elegida": "cuantiles",
+      "variantes": {
+        "cuantiles": {
+          "semillas": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ],
+          "val_acc_media": 0.6923,
+          "val_acc_std": 0.0219,
+          "test_acc_media (solo informativo)": 0.6079
+        },
+        "uniforme3": {
+          "semillas": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ],
+          "val_acc_media": 0.6645,
+          "val_acc_std": 0.0184,
+          "test_acc_media (solo informativo)": 0.6123
+        }
+      }
+    },
+    "62ch": {
+      "elegida": "uniforme3",
+      "variantes": {
+        "cuantiles": {
+          "semillas": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ],
+          "val_acc_media": 0.7318,
+          "val_acc_std": 0.0286,
+          "test_acc_media (solo informativo)": 0.6758
+        },
+        "uniforme3": {
+          "semillas": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ],
+          "val_acc_media": 0.7529,
+          "val_acc_std": 0.0188,
+          "test_acc_media (solo informativo)": 0.682
+        }
+      }
+    }
+  }
+}
