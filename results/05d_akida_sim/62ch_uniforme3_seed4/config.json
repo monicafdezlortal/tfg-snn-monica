@@ -1,0 +1,48 @@
+{
+  "experiment": "05d_akida_sim",
+  "model": "MLP32_akida_sim",
+  "channels": 62,
+  "seed": 4,
+  "feature_key": "de_LDS",
+  "input_dim": 310,
+  "input": "uint8 con valores 0..15",
+  "variant": "uniforme3",
+  "input_quant": "uniforme3",
+  "const_input": false,
+  "source_model": "results\\05c_akida_qat\\62ch_uniforme3_seed4\\model.keras",
+  "test_subjects": [
+    1,
+    2,
+    3
+  ],
+  "conversion": "cnn2snn.convert dentro de set_akida_version(AkidaVersion.v1)",
+  "backend": "simulador de Akida (software, sin placa)",
+  "ip_version": "IpVersion.v1",
+  "akida_layers": [
+    "Layer: entrada (InputData)",
+    "Layer: dense1 (Fully.)",
+    "Layer: dense2 (Fully.)"
+  ],
+  "fbz": {
+    "path": "results\\05d_akida_sim\\62ch_uniforme3_seed4\\model.fbz",
+    "bytes": 13439,
+    "sha256": "46e3b3f8c87ada215055d82641a7c1c425dcd2be513329c86f04c45bf3ae8b58"
+  },
+  "mapeo_akd1000_virtual": {
+    "status": "ok",
+    "n_sequences": 1,
+    "program_bytes": [
+      9288
+    ]
+  },
+  "versions": {
+    "tensorflow": "2.19.1",
+    "tf_keras": "2.19.0",
+    "quantizeml": "1.2.3",
+    "cnn2snn": "2.19.1",
+    "akida": "2.19.1",
+    "numpy": "2.1.3",
+    "TF_NUM_INTRAOP_THREADS": "1",
+    "TF_NUM_INTEROP_THREADS": "1"
+  }
+}

@@ -1,0 +1,3 @@
+Layer: entrada (InputData)
+Layer: dense1 (Fully.)
+Layer: dense2 (Fully.)
