@@ -8,6 +8,7 @@ Se ejecutan desde la raíz del repositorio.
 
 | Fichero | Qué hace | Datos que necesita |
 |---|---|---|
+| `analisis_seed.ipynb` | Análisis exploratorio de SEED: estructura, señal de EEG, espectros, cálculo de la DE, features `de_LDS` por emoción, mapas de la cabeza, poder discriminativo de cada canal y banda, canales ruidosos y diferencias entre sujetos. Guarda las figuras en `docs/figures/analisis_seed/`. Usa el kernel `snn_env` y tarda unos 4 min. | `data/ExtractedFeatures_1s/` y `SEED/SEED_EEG/Preprocessed_EEG/` |
 | `SpikingJelly1.ipynb` | Primera SNN con SpikingJelly (LIF, T = 6) sobre MNIST, en Google Colab. Su resultado aparece en `results/legacy/baseline.csv`. | Ninguno (descarga MNIST) |
 | `explorar_mat.py` | Muestra las claves y formas de un `.mat` de features y de `label.mat`. | `data/ExtractedFeatures_1s/` |
 | `explorar_canales.py` | Lee los nombres de los 62 canales de un `.cnt` en bruto. Necesita `mne`. | `SEED/SEED_EEG/SEED_RAW_EEG/` |
