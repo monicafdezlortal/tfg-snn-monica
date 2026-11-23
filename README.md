@@ -224,6 +224,34 @@ Mismo split cross-subject que 02 (test sujetos 1-3). Cada etapa parte de la ante
 - **El modelo Akida es `InputData → FullyConnected → FullyConnected`** (el dropout desaparece al convertir). El `.fbz` ocupa 2.6 KB con 4 canales y 13.4 KB con 62, y cabe entero en un AKD1000 virtual.
 - **Ninguna etapa pierde más de 5 puntos respecto a la anterior**, así que no ha hecho falta el plan B (añadir una entrada constante como bias, opción `--const-input` de 05b).
 
+**4 frente a 62 canales en cada etapa**
+
+Media de test de 5 semillas; en 05b-05d, con la entrada elegida por validación (cuantiles con 4 canales, ±3σ con 62).
+
+| Etapa | Accuracy 4 canales | Accuracy 62 canales | 62 − 4, accuracy (puntos) | 62 − 4, F1 macro (puntos) |
+|---|---|---|---|---|
+| 02 (referencia, otra red) | 0.6236 | 0.6508 | +2.7 | +2.9 |
+| 05a float | 0.6228 | 0.6900 | +6.7 | +6.9 |
+| 05b entrada 0..15 | 0.6079 | 0.6820 | +7.4 | +8.2 |
+| 05c QAT 4 bits | 0.6041 | 0.6736 | +7.0 | +7.5 |
+| 05d simulador Akida | 0.6037 | 0.6736 | +7.0 | +7.6 |
+
+| Tamaño del modelo (igual en las 5 semillas) | 4 canales | 62 canales |
+|---|---|---|
+| Features de entrada | 20 | 310 |
+| Pesos (4 bits) | 736 | 10 016 |
+| `.fbz` | 2 612 B (2.6 KB) | 13 439 B (13.4 KB) |
+| Programa al mapear en el AKD1000 virtual | 2 376 B | 9 288 B |
+
+- **La diferencia sube de 2.7 puntos en 02 a ~7 en 05 por la red, no por Akida.**
+  - La red de 05 es la mejor de 04a con 62 canales. Con 62 canales mejora a 02 en 3.9 puntos; con 4 canales queda igual (−0.1).
+  - Después, cuantizar y convertir apenas mueve la diferencia: se queda entre 7.0 y 7.4 puntos.
+- **Con 62 canales el modelo es 5 veces más grande** (13.6 veces más pesos), pero los dos caben con mucha holgura en el chip.
+- **Prueba con la mejor red de 4 canales de 04a no mejora.**
+  - Red de la prueba: trial 33, 32 → 16, dropout 0.138, lr 1.14e-4.
+  - 05a con 4 canales y esa red da 0.6182 ± 0.0066 (val 0.728), frente a 0.6228 ± 0.0103 (val 0.736) con la red de 32. Es 0.5 puntos peor y no reduce la diferencia con 62 canales.
+  - Por eso 05b-05d siguen con la red de 32. Para repetirla: `05a_akida_float.py --config 04a_4ch`; los resultados están en `results/05a_akida_float_cfg4ch/`.
+
 ## 7. Decisiones metodológicas clave
 
 - **Evaluación cross-subject (sujetos de test 1-3 no vistos; validación con sujetos 4-5).**

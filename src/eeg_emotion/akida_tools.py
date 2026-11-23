@@ -178,14 +178,19 @@ def class_weight_dict(y):
 def build_model(input_dim, input_dtype="float32", dropout=DROPOUT, hidden=HIDDEN,
                 name="emotion_mlp_akida"):
     """entrada -> Dense(hidden, sin bias) -> ReLU(max 15) -> Dropout -> Dense(3, sin bias).
+    hidden puede ser un entero (una capa oculta, la red de 05a-05d) o una
+    lista, p. ej. (32, 16): un bloque Dense -> ReLU -> Dropout por capa.
     El Dropout solo actua al entrenar: QuantizeML lo envuelve como
     QuantizedDropout y CNN2SNN lo elimina al convertir (comprobado)."""
+    hiddens = [hidden] if isinstance(hidden, int) else list(hidden)
     inp = keras.Input(shape=(input_dim,), dtype=input_dtype, name="entrada")
-    x = layers.Dense(hidden, use_bias=False, name="dense1")(inp)
-    x = layers.ReLU(max_value=RELU_MAX, name="relu1")(x)
-    if dropout:
-        x = layers.Dropout(dropout, name="dropout1")(x)
-    out = layers.Dense(3, use_bias=False, name="dense2")(x)
+    x = inp
+    for i, h in enumerate(hiddens, start=1):
+        x = layers.Dense(h, use_bias=False, name=f"dense{i}")(x)
+        x = layers.ReLU(max_value=RELU_MAX, name=f"relu{i}")(x)
+        if dropout:
+            x = layers.Dropout(dropout, name=f"dropout{i}")(x)
+    out = layers.Dense(3, use_bias=False, name=f"dense{len(hiddens) + 1}")(x)
     return keras.Model(inp, out, name=name)
 
 
