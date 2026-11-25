@@ -1,4 +1,4 @@
-# tfg-eeg-emotion
+# TFG clasificación de emociones con EEG con SNN
 
 **¿Se puede reconocer la emoción (negativa / neutra / positiva) a partir del EEG con solo 4 canales temporales (FT7, FT8, T7, T8) y una precisión cercana a la de los 62 canales, en sujetos no vistos durante el entrenamiento?**
 **¿Se mantiene esa precisión con una red de spikes (SNN) y al desplegar el modelo en hardware neuromórfico (BrainChip AKD1000)?**
