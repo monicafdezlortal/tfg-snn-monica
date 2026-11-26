@@ -13,7 +13,7 @@ Trabajo Fin de Grado de Mónica Fernández. Dataset: SEED (features `de_LDS`, ve
 |---|---|---|
 | 01 | Réplica del protocolo de Zheng & Lu 2015 (por sesión, trials 1-9 train / 10-15 test), ANN + SVM lineal | Hecho (5 semillas, 4 y 62 canales, 2 sesiones por sujeto) |
 | 02 | ANN cross-subject (test 1-3, val 4-5, train 6-15), z-score por sujeto | Hecho (5 semillas, 4 y 62 canales) |
-| 03 | SNN cross-subject con el mismo split | Hecho (4 canales) · 62 canales pendiente (a decidir con el tutor) |
+| 03 | SNN cross-subject con el mismo split | Hecho (4 canales) · 62 canales pendiente (a decidir) |
 | 04 | Búsqueda de hiperparámetros (ANN, SNN) y de features de entrada (ANN) | Hecho |
 | 05a-05d | ANN para Akida: Keras float → entrada de 4 bits → QuantizeML + QAT → Akida v1 (`.fbz`) en el simulador | Hecho (5 semillas, 4 y 62 canales) |
 | 05e | Latencia, potencia y energía en la placa AKD1000 (9 modos de reloj y mapeo) | Script preparado; pendiente de ejecutar en el laboratorio |
@@ -178,7 +178,7 @@ Test con los sujetos 1-3 (30 546 ventanas), no vistos en el entrenamiento.
 | ANN (`EmotionANN`, 20/310 → 128 → 64 → 3) | 02 | 4 | 0.6236 ± 0.0072 | 0.6223 ± 0.0065 |
 | ANN (`EmotionANN`) | 02 | 62 | 0.6508 ± 0.0081 | 0.6514 ± 0.0077 |
 | SNN (`EmotionSNN`, LIF, T = 50) | 03 | 4 | 0.6026 ± 0.0041 | 0.6018 ± 0.0043 |
-| SNN (`EmotionSNN`) | 03 | 62 | pendiente (a decidir con el tutor) | |
+| SNN (`EmotionSNN`) | 03 | 62 | pendiente (a decidir) | |
 
 **Búsquedas (experimento 04, ejecutadas antes de la reorganización)**
 
